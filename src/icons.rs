@@ -17,8 +17,8 @@ const MISS_LASTS: Duration = Duration::from_secs(60);
 
 const THEMES: [&str; 4] = ["hicolor", "breeze-dark", "breeze", "Adwaita"];
 const CONTEXTS: [&str; 6] = ["apps", "status", "devices", "panel", "categories", "actions"];
-// the scalable one first, then the biggest bitmaps
-const SIZES: [&str; 8] = ["scalable", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32", "22x22"];
+// the scalable ones first (some apps put theirs in hicolor's "symbolic"), then the biggest bitmaps
+const SIZES: [&str; 9] = ["scalable", "symbolic", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32", "22x22"];
 const NUMBERS: [&str; 6] = ["256", "128", "64", "48", "32", "22"];
 
 // where icons live, and which themes to look in under each. Flatpak apps export their icons to their own folders
