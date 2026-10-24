@@ -77,11 +77,7 @@ impl Service for Tray {
                 "RegisterStatusNotifierItem" => {
                     let service = method.arguments().first().map_or("", Value::text).to_string();
 
-                    // "name" or "name/path"
-                    let (destination, path) = match service.split_once('/') {
-                        Some((name, path)) => (name.to_string(), format!("/{path}")),
-                        None => (service, String::from("/StatusNotifierItem")),
-                    };
+                    let (destination, path) = registration(&service, method.sender());
 
                     if !destination.is_empty() {
                         let mut registered = lock(&REGISTERED);
@@ -103,6 +99,21 @@ impl Service for Tray {
                 _ => method.reply(&[]),
             }
         }
+    }
+}
+
+/*
+ * where a registered item lives: "name", "name/path", or only "/path" on the caller's own connection, which apps built
+ * on libappindicator send (Steam, for one), as they own no name of their own
+ */
+fn registration(service: &str, sender: &str) -> (String, String) {
+    if service.starts_with('/') {
+        return (sender.to_string(), service.to_string());
+    }
+
+    match service.split_once('/') {
+        Some((name, path)) => (name.to_string(), format!("/{path}")),
+        None => (service.to_string(), String::from("/StatusNotifierItem")),
     }
 }
 
@@ -484,7 +495,16 @@ pub fn click(item: &TrayItem, button: amane::Button, monitor: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{crc32, png};
+    use super::{crc32, png, registration};
+
+    #[test]
+    fn registrations_in_every_form() {
+        let item = |service| registration(service, ":1.7");
+
+        assert_eq!(item("org.kde.StatusNotifierItem-5-1"), (String::from("org.kde.StatusNotifierItem-5-1"), String::from("/StatusNotifierItem")));
+        assert_eq!(item(":1.9/org/ayatana/NotificationItem/app"), (String::from(":1.9"), String::from("/org/ayatana/NotificationItem/app")));
+        assert_eq!(item("/org/ayatana/NotificationItem/steam"), (String::from(":1.7"), String::from("/org/ayatana/NotificationItem/steam")));
+    }
 
     #[test]
     fn crc32_matches_the_published_values() {
