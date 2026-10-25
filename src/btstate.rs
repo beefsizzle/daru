@@ -206,6 +206,73 @@ pub fn disconnect(path: &str) {
 }
 
 /*
+ * BlueZ asks a pairing agent to confirm a pairing, and refuses the pairing when no program has registered one, which
+ * nothing does here but a desktop's own Bluetooth tool: a mouse that wants its pairing confirmed never paired. so
+ * daru registers one for as long as it pairs. it agrees only to the pairing daru started, for the device picked in
+ * the dropdown, and only when bluetoothd asks, so nothing nearby can pair itself meanwhile. it can't show or take a
+ * code, so a device that needs one typed is still refused
+ */
+const AGENT_PATH: &str = "/org/amane_shell/bluetooth_agent";
+const AGENT: &str = "org.bluez.Agent1";
+const AGENT_MANAGER: &str = "org.bluez.AgentManager1";
+
+// the device being paired, the only one the agent agrees to
+static PAIRING: Mutex<Option<String>> = Mutex::new(None);
+
+static ANSWERING: std::sync::Once = std::sync::Once::new();
+
+// registered while it lives
+struct Agent;
+
+impl Agent {
+    fn register(device: &str) -> Self {
+        // one thread for good, made at the first pairing: the calls are watched before the agent is registered, so
+        // none is missed
+        ANSWERING.call_once(|| {
+            let calls = Bus::system().methods(AGENT_PATH, AGENT);
+
+            std::thread::spawn(move || calls.for_each(|call| answer(&call)));
+        });
+
+        *crate::sync::lock(&PAIRING) = Some(device.to_string());
+
+        let arguments = [Argument::Path(AGENT_PATH.to_string()), Argument::from("NoInputNoOutput")];
+
+        Bus::system().call(BLUEZ, "/org/bluez", AGENT_MANAGER, "RegisterAgent", &arguments);
+
+        Self
+    }
+}
+
+impl Drop for Agent {
+    fn drop(&mut self) {
+        Bus::system().call(BLUEZ, "/org/bluez", AGENT_MANAGER, "UnregisterAgent", &[Argument::Path(AGENT_PATH.to_string())]);
+
+        *crate::sync::lock(&PAIRING) = None;
+    }
+}
+
+// what BlueZ asks the agent. the device it's about comes first in every request that has one
+fn answer(call: &amane::Method) {
+    let bluetoothd = Bus::system().call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetNameOwner", &[Argument::from(BLUEZ)]);
+
+    let device = call.arguments().first().map_or("", Value::text);
+
+    let ours = call.sender() == bluetoothd.text() && crate::sync::lock(&PAIRING).as_deref() == Some(device);
+
+    match call.name() {
+        // "yes, pair": a mouse or keyboard confirming, or a device asking to pair or use a service
+        "RequestConfirmation" | "RequestAuthorization" | "AuthorizeService" if ours => call.reply(&[]),
+
+        // news, nothing to answer but that it arrived
+        "Release" | "Cancel" | "DisplayPasskey" | "DisplayPinCode" => call.reply(&[]),
+
+        // a code to type, or anything not about this pairing
+        _ => call.reply_error("org.bluez.Error.Rejected", "only the pairing started from the Bluetooth dropdown is confirmed"),
+    }
+}
+
+/*
  * pairs, trusts and connects; only for devices that pair without a code.
  *
  * BlueZ only keeps a pairing's keys (a bond) while the adapter is pairable, which it often isn't with no other
@@ -226,6 +293,9 @@ pub fn pair(path: &str) {
         if !was_pairable {
             bus.set_property(BLUEZ, &adapter, ADAPTER, "Pairable", Argument::from(true));
         }
+
+        // BlueZ asks the agent of whoever called Pair, so it's registered on this connection, for this pairing only
+        let _agent = Agent::register(&device);
 
         bus.call(BLUEZ, &device, DEVICE, "Pair", &[]);
 
