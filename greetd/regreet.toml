@@ -1,0 +1,21 @@
+# ReGreet's config for daru's login screen, put in /etc/greetd/regreet.toml by greetd/install.sh. the wallpaper and
+# colours come from /var/lib/daru-greeter, which the shell keeps up to date (`regreet` in amane-shell/recolor)
+
+[background]
+path = "/var/lib/daru-greeter/wallpaper.jpg"
+fit = "Cover"
+
+[GTK]
+application_prefer_dark_theme = true
+cursor_theme_name = "capitaine-cursors"
+font_name = "Adwaita Sans 11"
+icon_theme_name = "Adwaita"
+theme_name = "Adwaita"
+
+[commands]
+reboot = ["systemctl", "reboot"]
+poweroff = ["systemctl", "poweroff"]
+
+[widget.clock]
+format = "%A %-d %B   %H:%M"
+locale = "en_US"

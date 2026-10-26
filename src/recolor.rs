@@ -28,6 +28,8 @@ use crate::theme::{Theme, hex, mix, over, signal, theme, to_hsl};
  *     sddm      /var/lib/daru-sddm, the wallpaper and its colours for the login screen (sddm/ in this repository). the
  *               greeter runs as its own user and can't read the home folder, so they're copied to a folder that
  *               sddm/install.sh makes once, with sudo. nothing is written until it exists
+ *     regreet   /var/lib/daru-greeter, the same for the login screen under greetd (greetd/ in this repository): the
+ *               wallpaper and a stylesheet for ReGreet, in a folder greetd/install.sh makes once, with sudo
  */
 #[derive(Clone, Copy, PartialEq)]
 enum App {
@@ -40,6 +42,7 @@ enum App {
     Strata,
     Btop,
     Sddm,
+    Regreet,
 }
 
 // one export at a time: two wallpaper changes in quick succession must not interleave their writes
@@ -60,6 +63,7 @@ fn wanted() -> Vec<App> {
             "strata" => Some(App::Strata),
             "btop" => Some(App::Btop),
             "sddm" => Some(App::Sddm),
+            "regreet" => Some(App::Regreet),
             _ => None,
         })
         .collect()
@@ -137,6 +141,9 @@ pub fn export() {
                 }
                 App::Sddm => {
                     login_screen(&colors);
+                }
+                App::Regreet => {
+                    greeter(&colors);
                 }
             }
         }
@@ -598,6 +605,32 @@ fn login_screen(c: &Colors) {
         return;
     }
 
+    let shown = login_wallpaper(folder);
+
+    write(&folder.join("theme.conf.user"), &sddm(c, shown.as_deref()));
+}
+
+// where ReGreet's wallpaper and stylesheet go. made by greetd/install.sh, owned by the user, readable by the greeter
+const GREETER_DIR: &str = "/var/lib/daru-greeter";
+
+// the same for ReGreet under greetd: greetd/regreet.toml reads wallpaper.jpg, greetd/daru-greeter the stylesheet
+fn greeter(c: &Colors) {
+    let folder = Path::new(GREETER_DIR);
+
+    if !folder.is_dir() {
+        return;
+    }
+
+    login_wallpaper(folder);
+
+    write(&folder.join("regreet.css"), &regreet(c));
+}
+
+/*
+ * the blurred wallpaper as `folder`/wallpaper.jpg, or the one already there when this wallpaper has no blurred copy
+ * yet. none when there's neither, and the login screen shows its background colour
+ */
+fn login_wallpaper(folder: &Path) -> Option<PathBuf> {
     /*
      * it's only seen at the next logout, so the blur below waits for the wallpaper's fade to finish rather than
      * taking the cores the fade is drawn with. a fade takes under half a second; this gives up waiting after two
@@ -617,9 +650,7 @@ fn login_screen(c: &Colors) {
     let copied = crate::wallpapers::make_blurred(&chosen).is_some_and(|blurred| copy(Path::new(&blurred), &picture));
 
     // the previous wallpaper stays when this one has no copy yet, the colours always follow
-    let shown = (copied || picture.is_file()).then_some(picture.as_path());
-
-    write(&folder.join("theme.conf.user"), &sddm(c, shown));
+    (copied || picture.is_file()).then_some(picture)
 }
 
 // copied under another name and renamed, like `write`, and only when it changed
@@ -659,6 +690,104 @@ fn sddm(c: &Colors, wallpaper: Option<&Path>) -> String {
 
     text
 }
+
+/*
+ * ReGreet's stylesheet: the wallpaper dimmed like the lock screen's, a dark see-through card, quiet fields that light
+ * up in the accent, and the power buttons as plain text until hovered. square corners everywhere, like the rest of
+ * the shell. ReGreet is plain GTK4 on Adwaita, so these style its widgets by type
+ */
+fn regreet(c: &Colors) -> String {
+    let colors = [
+        ("daru_bg", c.background),
+        ("daru_surface", c.surface),
+        ("daru_text", c.text),
+        ("daru_dim", c.dim),
+        ("daru_faint", c.faint),
+        ("daru_accent", c.accent),
+        ("daru_on_accent", c.on_accent),
+        ("daru_danger", c.red),
+    ];
+
+    let mut text = format!("/* {HEADER} */\n\n");
+
+    for (name, color) in colors {
+        text.push_str(&format!("@define-color {name} {};\n", hex(color)));
+    }
+
+    text.push_str(REGREET_STYLE);
+
+    text
+}
+
+const REGREET_STYLE: &str = r#"
+/* Adwaita rounds the card, fields, buttons, menus and focus rings */
+* {
+    border-radius: 0;
+}
+
+window {
+    background-color: black;
+    color: @daru_text;
+}
+
+/* the wallpaper, dimmed */
+picture {
+    opacity: 0.52;
+}
+
+frame, frame > border {
+    background-color: alpha(@daru_bg, 0.72);
+    border: 1px solid alpha(@daru_text, 0.08);
+    box-shadow: none;
+}
+
+label {
+    color: @daru_dim;
+}
+
+entry, button {
+    background-color: alpha(black, 0.35);
+    background-image: none;
+    color: @daru_text;
+    border: 1px solid alpha(@daru_text, 0.18);
+    box-shadow: none;
+    outline-color: alpha(@daru_accent, 0.6);
+}
+
+button label {
+    color: inherit;
+}
+
+entry:focus-within, button:hover {
+    border-color: alpha(@daru_accent, 0.6);
+}
+
+button.suggested-action {
+    background-color: @daru_accent;
+    color: @daru_on_accent;
+    border-color: @daru_accent;
+}
+
+button.destructive-action {
+    background-color: transparent;
+    color: @daru_faint;
+    border-color: transparent;
+}
+
+button.destructive-action:hover {
+    background-color: alpha(@daru_text, 0.12);
+    color: @daru_text;
+}
+
+popover > contents {
+    background-color: @daru_surface;
+    color: @daru_text;
+}
+
+label.error {
+    color: @daru_danger;
+}
+"#;
 
 /*
  * btop's colours: quiet box lines, the accent for what's highlighted, and graphs that go from calm to the warning
@@ -949,6 +1078,20 @@ mod tests {
         let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c)));
 
         assert!(super::sddm(&colors, None).contains("\nbackground=\n"));
+    }
+
+    #[test]
+    fn the_greeter_stylesheet_defines_every_colour_it_uses() {
+        let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c)));
+
+        let css = super::regreet(&colors);
+
+        // GTK drops a rule that names a colour nobody defined
+        for used in css.split('@').skip(1).filter_map(|rest| rest.split(|c: char| !c.is_alphanumeric() && c != '_').next()) {
+            if used != "define" {
+                assert!(css.contains(&format!("@define-color {used} #")), "@{used} isn't defined");
+            }
+        }
     }
 
     #[test]

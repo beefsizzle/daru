@@ -97,6 +97,7 @@ The shell can write the wallpaper colours for other apps, live where the app all
 | `strata` ([Strata](https://github.com/lgse/strata)) | `~/.config/strata/themes/daru.toml` (live) | pick the "Daru" theme |
 | `btop` | `~/.config/btop/themes/daru.theme` (live) | `color_theme = "daru"` in `~/.config/btop/btop.conf` |
 | `sddm` (login screen) | the wallpaper and colours in `/var/lib/daru-sddm` | run `sudo sddm/install.sh` once (below) |
+| `regreet` (login screen under greetd) | the wallpaper and a stylesheet in `/var/lib/daru-greeter` | run `sudo greetd/install.sh` once (below) |
 
 ## Login screen
 
@@ -111,6 +112,24 @@ echo sddm >> ~/.config/amane-shell/recolor
 
 then pick a wallpaper. To look at it without logging out: `sddm-greeter-qt6 --test-mode --theme /usr/share/sddm/themes/daru`.
 `sudo sddm/install.sh --remove` puts the previous theme back.
+
+`greetd/` is a lighter alternative: [greetd](https://sr.ht/~kennylevinsen/greetd/) runs
+[ReGreet](https://github.com/rharish101/ReGreet) in [cage](https://github.com/cage-kiosk/cage), and all three are gone
+again once you're logged in, while SDDM keeps its X server running for the whole session (about 190 MB with SDDM
+itself on a laptop). ReGreet's layout is its own, so this styles it with the wallpaper and colours rather than
+looking like the lock screen. Set it up once per machine, with `--scale` for a high-dpi screen (cage draws at scale 1
+otherwise, and needs `wlr-randr` to change that):
+
+```sh
+sudo pacman -S greetd greetd-regreet cage wlr-randr
+sudo greetd/install.sh --scale 1.5
+echo regreet >> ~/.config/amane-shell/recolor
+sudo systemctl disable sddm && sudo systemctl enable greetd
+```
+
+To look at it without logging out: `regreet --demo --style /var/lib/daru-greeter/regreet.css`.
+`sudo greetd/install.sh --remove` puts greetd's own setup back, and `sudo systemctl disable greetd && sudo systemctl
+enable sddm` the SDDM login screen.
 
 ## Config
 

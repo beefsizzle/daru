@@ -1,0 +1,10 @@
+# greetd's config for daru's login screen, put in /etc/greetd/config.toml by greetd/install.sh
+
+[terminal]
+vt = 1
+
+# cage shows one program over the whole screen and quits when it does. -s keeps ctrl+alt+F2 and the other text
+# logins working, -m last shows the greeter on one monitor rather than splitting its card across two
+[default_session]
+command = "cage -s -m last -- /etc/greetd/daru-greeter"
+user = "greeter"

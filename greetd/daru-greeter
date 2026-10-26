@@ -1,0 +1,13 @@
+#!/bin/sh
+# runs inside cage, which draws every screen at scale 1, so a high-dpi laptop screen would get a tiny login screen.
+# the scale in /etc/greetd/daru-scale (greetd/install.sh --scale) is set first, then ReGreet starts with the colours
+# the shell wrote
+scale="$(cat /etc/greetd/daru-scale 2>/dev/null || echo 1)"
+
+if [ "$scale" != 1 ] && command -v wlr-randr >/dev/null; then
+    for output in $(wlr-randr | grep -v '^ ' | cut -d' ' -f1); do
+        wlr-randr --output "$output" --scale "$scale"
+    done
+fi
+
+exec regreet --style /var/lib/daru-greeter/regreet.css
