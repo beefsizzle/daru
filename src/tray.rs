@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -36,6 +37,20 @@ static BUSY: Mutex<Vec<String>> = Mutex::new(Vec::new());
 // how long a round waits for apps to answer. one that is slower keeps showing what it showed before
 const ANSWER_WITHIN: Duration = Duration::from_millis(1500);
 
+/*
+ * a round of asking every app runs when something says it changed: an app registering, one of the item signals below,
+ * or an app's name coming or going on the bus. it used to run every 2 seconds, about 20 D-Bus calls and a thread per app
+ * each time, which made the tray the busiest thing in an idle shell. an app that changes something without saying so
+ * still shows it within a minute
+ */
+const AT_LEAST_EVERY: Duration = Duration::from_secs(60);
+
+// an app starting sends a few of these at once, and they make one round
+const SETTLE: Duration = Duration::from_millis(150);
+
+// what an item sends when something we show changes (NewIcon also marks its pixmap stale, see ICONS_STALE)
+const ITEM_SIGNALS: [&str; 5] = ["NewTitle", "NewStatus", "NewToolTip", "NewAttentionIcon", "NewOverlayIcon"];
+
 // the biggest icon we'll read: 512 x 512 x 4 bytes. an app can send any size it likes
 const LARGEST_ICON: u64 = 512;
 
@@ -58,12 +73,37 @@ impl Service for Tray {
 
         bus.own(&format!("org.kde.StatusNotifierHost-{}", std::process::id()));
 
-        std::thread::spawn(poll);
-        std::thread::spawn(|| {
-            for _ in Bus::session().signals(ITEM, "NewIcon") {
-                ICONS_STALE.store(true, Ordering::Relaxed);
-            }
-        });
+        let (changed, changes) = mpsc::channel();
+
+        std::thread::spawn(move || poll(&changes));
+
+        {
+            let changed = changed.clone();
+
+            std::thread::spawn(move || {
+                for _ in Bus::session().signals(ITEM, "NewIcon") {
+                    ICONS_STALE.store(true, Ordering::Relaxed);
+
+                    let _ = changed.send(());
+                }
+            });
+        }
+
+        for name in ITEM_SIGNALS {
+            let changed = changed.clone();
+
+            std::thread::spawn(move || {
+                for _ in Bus::session().signals(ITEM, name) {
+                    let _ = changed.send(());
+                }
+            });
+        }
+
+        {
+            let changed = changed.clone();
+
+            std::thread::spawn(move || follow_names(&changed));
+        }
 
         if !owner {
             // another watcher exists, we only read its list in `poll`
@@ -95,6 +135,8 @@ impl Service for Tray {
                         "StatusNotifierItemRegistered",
                         &[Argument::Text(destination)],
                     );
+
+                    let _ = changed.send(());
                 }
                 _ => method.reply(&[]),
             }
@@ -156,6 +198,34 @@ fn answer_properties(properties: impl Iterator<Item = amane::Method>) {
     }
 }
 
+/*
+ * an app's name coming or going: one that quit has to leave the tray, and one that started with a well-known item name
+ * may never register. every connection that comes and goes is announced, so only names that could be an item count
+ */
+fn follow_names(changed: &Sender<()>) {
+    for signal in Bus::session().signals("org.freedesktop.DBus", "NameOwnerChanged") {
+        let name = signal.arguments().first().map_or("", Value::text);
+
+        let an_item_name = name.starts_with("org.kde.StatusNotifierItem-") || name.starts_with("org.freedesktop.StatusNotifierItem-");
+        let shown = || Tray::read().items.iter().any(|item| item.destination == name);
+        let registered = || lock(&REGISTERED).iter().any(|(destination, _)| destination == name);
+
+        if (an_item_name || shown() || registered()) && changed.send(()).is_err() {
+            return;
+        }
+    }
+}
+
+// the next round's moment: something changed, and has settled, or a minute has gone by
+fn wait_for_change(changes: &Receiver<()>) {
+    match changes.recv_timeout(AT_LEAST_EVERY) {
+        Ok(()) => while changes.recv_timeout(SETTLE).is_ok() {},
+        Err(RecvTimeoutError::Timeout) => {}
+        // nothing can say so any more (no session bus): rounds go on at the slow pace
+        Err(RecvTimeoutError::Disconnected) => std::thread::sleep(AT_LEAST_EVERY),
+    }
+}
+
 // every app that might have an icon: registered ones first (in the order they registered, with the path they gave),
 // then ones another watcher knows, then the rest found on the bus by name. a stable order, so icons don't shuffle
 fn candidates(bus: &Bus, names: &[String]) -> Vec<(String, String)> {
@@ -209,7 +279,7 @@ fn fetch_item(destination: &str, path: &str, refresh_icon: bool, previous: Optio
     Some(TrayItem { destination: destination.to_string(), path: path.to_string(), title, icon, menu, is_menu })
 }
 
-fn poll() {
+fn poll(changes: &Receiver<()>) {
     let bus = Bus::session();
 
     // apps whose pixmap has to be read again. a NewIcon doesn't say who sent it, so it marks every app, and an app
@@ -302,7 +372,7 @@ fn poll() {
             Tray::write().items = items;
         }
 
-        std::thread::sleep(Duration::from_secs(2));
+        wait_for_change(changes);
     }
 }
 
