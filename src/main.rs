@@ -9,6 +9,7 @@ mod calendar;
 mod clock;
 mod dashboard;
 mod focus;
+mod freeze;
 mod icons;
 mod launcher;
 mod lockscreen;
@@ -102,7 +103,7 @@ fn main() {
                 return String::from("usage: screenshot region|screen|annotate");
             };
 
-            amane::spawn(&compositor::screenshot(shot));
+            compositor::take(shot);
 
             String::from("ok")
         })
@@ -185,6 +186,8 @@ fn main() {
         .window_per_monitor(notify::toast_0)
         .window_per_monitor(notify::toast_1)
         .window_per_monitor(notify::toast_2)
+        // last, so a frozen screen covers the shell's other overlays too; slurp still opens above it
+        .window_per_monitor(freeze::view)
         .run();
 }
 

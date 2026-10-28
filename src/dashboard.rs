@@ -219,8 +219,12 @@ fn tiles(t: &Theme) -> Column {
         tile("t-shot", t, "\u{f030}", "Screenshot", "Region", false, |_| {
             panels::close();
 
-            // a moment for the dashboard to close first, so it isn't in the picture
-            amane::spawn(&format!("sleep 0.3; {}", crate::compositor::screenshot(crate::compositor::Shot::Region)));
+            // a moment for the dashboard to close first, so it isn't in the picture, or in the frozen screen
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+
+                crate::compositor::take(crate::compositor::Shot::Region);
+            });
         }),
     ])
     .gap(10.0);

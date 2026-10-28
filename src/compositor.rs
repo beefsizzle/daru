@@ -48,28 +48,27 @@ impl Shot {
 }
 
 // where every screenshot goes, as niri saves them
-const SAVE: &str = "folder=\"$HOME/Pictures/Screenshots\"; mkdir -p \"$folder\"; \
+pub const SAVE: &str = "folder=\"$HOME/Pictures/Screenshots\"; mkdir -p \"$folder\"; \
                     file=\"$folder/Screenshot from $(date '+%Y-%m-%d %H-%M-%S').png\"";
 
 // copied, and a notification with the picture in it, as niri does
-const DONE: &str = "wl-copy --type image/png < \"$file\" && \
+pub const DONE: &str = "wl-copy --type image/png < \"$file\" && \
                     notify-send --app-name=Screenshot --icon=\"$file\" \"Screenshot taken\" \"Saved in Pictures/Screenshots and copied\"";
 
 /*
- * the command for a screenshot. niri takes its own, which save, copy and notify by themselves; elsewhere it's grim and
- * slurp doing the same, and satty for drawing on one. a cancelled drag does nothing
+ * takes a screenshot without waiting for it. niri's own tool saves, copies and notifies by itself, and freezes the
+ * screen while a region is dragged out. elsewhere a region is dragged out with slurp over a frozen screen (freeze.rs),
+ * also for one to draw on in satty, and a whole monitor is taken with grim
  */
-pub fn screenshot(shot: Shot) -> String {
+pub fn take(shot: Shot) {
     match (running(), shot) {
-        (Compositor::Niri, Shot::Region) => String::from("niri msg action screenshot"),
-        (Compositor::Niri, Shot::Screen) => String::from("niri msg action screenshot-screen"),
-        (_, Shot::Region) => format!("region=\"$(slurp)\" || exit; {SAVE}; grim -g \"$region\" \"$file\" && {DONE}"),
-        (Compositor::Umbriel, Shot::Screen) => {
-            format!("output=\"$(umbriel outputs --json | jq -r '.[] | select(.focused) | .name')\"; {SAVE}; grim -o \"$output\" \"$file\" && {DONE}")
-        }
-        (_, Shot::Screen) => format!("{SAVE}; grim \"$file\" && {DONE}"),
-        // satty saves, copies and notifies by itself (see ~/.config/satty/config.toml)
-        (_, Shot::Annotate) => String::from("region=\"$(slurp)\" || exit; grim -g \"$region\" - | satty --filename -"),
+        (Compositor::Niri, Shot::Region) => amane::spawn("niri msg action screenshot"),
+        (Compositor::Niri, Shot::Screen) => amane::spawn("niri msg action screenshot-screen"),
+        (Compositor::Umbriel, Shot::Screen) => amane::spawn(&format!(
+            "output=\"$(umbriel outputs --json | jq -r '.[] | select(.focused) | .name')\"; {SAVE}; grim -o \"$output\" \"$file\" && {DONE}"
+        )),
+        (_, Shot::Screen) => amane::spawn(&format!("{SAVE}; grim \"$file\" && {DONE}")),
+        (_, Shot::Region | Shot::Annotate) => crate::freeze::region(shot),
     }
 }
 
