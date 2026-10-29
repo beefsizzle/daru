@@ -550,7 +550,9 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         Rectangle::new()
             .width(Parent)
             .height(Parent)
-            .fill(t.panel)
+            // the bar's glass rather than a panel's background: the strip is mostly pictures, not text to read, and
+            // sits as see-through as the bar and the windows around it
+            .fill(t.glass)
             .align_child(Center, Center)
             .on_scroll(|scroll| Wallpapers::write().scroll(if scroll.y.abs() >= scroll.x.abs() { scroll.y } else { scroll.x }))
             .child(content),
