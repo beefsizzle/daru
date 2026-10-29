@@ -24,6 +24,9 @@ pub struct Notify {
 const TOAST_SECONDS: u64 = 6;
 const SLOTS: usize = 3;
 
+// the most a picture from a sender is decoded at: 40 px drawn, at a 1.5 scale, with room to spare
+const PICTURE_SIZE: u32 = 64;
+
 impl Service for Notify {
     fn new() -> Self {
         Self { dnd: false, toasts: Vec::new(), monitor: String::new(), hidden: HashSet::new() }
@@ -139,21 +142,22 @@ fn toast(slot: usize, monitor: &Monitor) -> LayerWindow {
 fn avatar(t: &Theme, notification: &Notification) -> Rectangle {
     let base = Rectangle::new().width(40.0).height(40.0).radius(0.0);
 
-    // a sender's own picture (an avatar) wins over the app icon
+    /*
+     * a sender's own picture (an avatar) wins over the app icon. pictures a sender gives are decoded small, at about
+     * the size they're drawn: a full-size decode stays as long as the notification is in the center's history, and a
+     * screenshot is 24 MB at 3000 x 2000. small copies are kept for good, a few KB each
+     */
     if let Some(image) = crate::icons::resolve(notification.image()) {
-        return base.fill(Image::cover(image));
+        return base.fill(Image::cover(image).thumbnail(PICTURE_SIZE, PICTURE_SIZE));
     }
 
     let app_icon = crate::icons::resolve(notification.icon()).or_else(|| crate::icons::resolve(&notification.app_name().to_lowercase()));
 
     if let Some(path) = app_icon {
-        /*
-         * a sender can give a file of its own as the icon, like a screenshot tool showing the screenshot. that's
-         * decoded plainly and let go with the card, not as an app icon, whose small copies are kept for good
-         */
+        // a sender can give a file of its own as the icon, like a screenshot tool showing the screenshot
         let own_file = notification.icon().trim().trim_start_matches("file://").starts_with('/');
 
-        let picture = if own_file { Image::contain(&path) } else { crate::ui::app_icon(&path) };
+        let picture = if own_file { Image::contain(&path).thumbnail(PICTURE_SIZE, PICTURE_SIZE) } else { crate::ui::app_icon(&path) };
 
         return base.fill(t.surface_hi).padding(7.0).child(Rectangle::new().width(26.0).height(26.0).fill(picture));
     }
