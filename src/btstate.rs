@@ -127,6 +127,10 @@ impl Service for BtState {
                 }
             } else {
                 rounds_since_search = 0;
+
+                panels::wait_until_open(&[Which::Bluetooth, Which::Dashboard]);
+
+                continue;
             }
 
             std::thread::sleep(Duration::from_secs(1));

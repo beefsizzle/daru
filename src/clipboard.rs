@@ -119,9 +119,9 @@ impl Service for Clipboard {
         let mut failed: HashSet<String> = HashSet::new();
 
         loop {
-            if panels::is_open(Which::Clipboard) {
-                refresh(&mut failed);
-            }
+            panels::wait_until_open(&[Which::Clipboard]);
+
+            refresh(&mut failed);
 
             std::thread::sleep(Duration::from_secs(1));
         }

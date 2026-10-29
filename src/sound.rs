@@ -76,12 +76,12 @@ impl Service for Devices {
     // a few process spawns a second, so only while the dropdown is on screen
     fn listen() {
         loop {
-            if panels::is_open(Which::Audio) {
-                let fresh = read_all();
+            panels::wait_until_open(&[Which::Audio]);
 
-                if fresh != *Self::read() {
-                    *Self::write() = fresh;
-                }
+            let fresh = read_all();
+
+            if fresh != *Self::read() {
+                *Self::write() = fresh;
             }
 
             std::thread::sleep(Duration::from_secs(1));

@@ -54,6 +54,24 @@ pub fn is_open(which: Which) -> bool {
     Panels::read().open[which as usize]
 }
 
+/*
+ * the threads that only work while a panel is open (the system numbers, the network details, the audio devices,
+ * Bluetooth, the clipboard) wait here while it's closed, so a closed panel costs no wakeups at all. `changed` wakes
+ * them whenever a panel opens or closes, and each looks again
+ */
+static OPENING: std::sync::Condvar = std::sync::Condvar::new();
+static OPENING_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// waits until one of these panels is open, and returns at once if one already is
+pub fn wait_until_open(which: &[Which]) {
+    let mut waiting = crate::sync::lock(&OPENING_LOCK);
+
+    // the lock is held from the look to the wait, and `changed` takes it to wake us, so an opening can't slip between
+    while !which.iter().any(|which| is_open(*which)) {
+        waiting = OPENING.wait(waiting).unwrap_or_else(std::sync::PoisonError::into_inner);
+    }
+}
+
 /// is this panel open, and on this monitor
 pub fn shown(which: Which, monitor: &Monitor) -> bool {
     let panels = Panels::read();
@@ -238,6 +256,12 @@ pub fn close() {
 /// things that run while a panel is open. looking for Bluetooth devices drains the adapter and the battery of
 /// whatever is nearby, so it only happens while its panel is on screen
 pub fn changed(before: &[bool; COUNT], after: &[bool; COUNT]) {
+    {
+        let _waking = crate::sync::lock(&OPENING_LOCK);
+
+        OPENING.notify_all();
+    }
+
     let bluetooth = Which::Bluetooth as usize;
 
     if before[bluetooth] != after[bluetooth] {

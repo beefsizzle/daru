@@ -146,7 +146,7 @@ impl Service for Sys {
                 baseline = None;
                 round = 0;
 
-                std::thread::sleep(Duration::from_secs(1));
+                panels::wait_until_open(&[Which::Dashboard, Which::Network]);
 
                 continue;
             }

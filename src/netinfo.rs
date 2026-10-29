@@ -144,7 +144,7 @@ impl Service for Netinfo {
             if !panels::is_open(Which::Network) {
                 round = 0;
 
-                std::thread::sleep(Duration::from_secs(1));
+                panels::wait_until_open(&[Which::Network]);
 
                 continue;
             }
