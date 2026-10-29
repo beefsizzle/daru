@@ -118,12 +118,14 @@ then pick a wallpaper. To look at it without logging out: `sddm-greeter-qt6 --te
 again once you're logged in, while SDDM keeps its X server running for the whole session (about 190 MB with SDDM
 itself on a laptop). ReGreet's layout is its own, so this styles it with the wallpaper and colours rather than
 looking like the lock screen. Set it up once per machine, with `--scale` for a high-dpi screen (cage draws at scale 1
-otherwise, and needs `wlr-randr` to change that):
+otherwise) and `--output` to pick the monitor when there's more than one (cage takes the last one it finds; `wlr-randr`
+lists their names). Both need `wlr-randr`. Add `regreet` to the recolor list first, so the install writes the
+wallpaper and colours straight away:
 
 ```sh
 sudo pacman -S greetd greetd-regreet cage wlr-randr
-sudo greetd/install.sh --scale 1.5
 echo regreet >> ~/.config/amane-shell/recolor
+sudo greetd/install.sh --scale 1.5 --output DP-1
 sudo systemctl disable sddm && sudo systemctl enable greetd
 ```
 

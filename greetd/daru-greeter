@@ -1,13 +1,30 @@
 #!/bin/sh
-# runs inside cage, which draws every screen at scale 1, so a high-dpi laptop screen would get a tiny login screen.
-# the scale in /etc/greetd/daru-scale (greetd/install.sh --scale) is set first, then ReGreet starts with the colours
-# the shell wrote
+# runs inside cage, which shows the greeter on the last monitor it found and draws every screen at scale 1. so first
+# the monitor in /etc/greetd/daru-output (greetd/install.sh --output) is turned on and the others off, then the scale
+# in /etc/greetd/daru-scale (--scale) is set, for a high-dpi laptop screen that would get a tiny login screen. then
+# ReGreet starts with the colours the shell wrote
+output="$(cat /etc/greetd/daru-output 2>/dev/null)"
 scale="$(cat /etc/greetd/daru-scale 2>/dev/null || echo 1)"
 
-if [ "$scale" != 1 ] && command -v wlr-randr >/dev/null; then
-    for output in $(wlr-randr | grep -v '^ ' | cut -d' ' -f1); do
-        wlr-randr --output "$output" --scale "$scale"
-    done
+if command -v wlr-randr >/dev/null; then
+    outputs="$(wlr-randr | grep -v '^ ' | cut -d' ' -f1)"
+
+    # only when that monitor is plugged in and came on, so a missing one or a failed switch never leaves it dark. its
+    # preferred mode when it has one
+    if [ -n "$output" ] && printf '%s\n' "$outputs" | grep -qx "$output" &&
+        { wlr-randr --output "$output" --on --preferred || wlr-randr --output "$output" --on; }; then
+        for other in $outputs; do
+            [ "$other" = "$output" ] || wlr-randr --output "$other" --off
+        done
+
+        outputs="$output"
+    fi
+
+    if [ "$scale" != 1 ]; then
+        for each in $outputs; do
+            wlr-randr --output "$each" --scale "$scale"
+        done
+    fi
 fi
 
 exec regreet --style /var/lib/daru-greeter/regreet.css

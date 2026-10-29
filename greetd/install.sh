@@ -1,10 +1,11 @@
 #!/bin/sh
-# sets up daru's login screen for greetd, once per machine:   sudo greetd/install.sh [--scale 1.5]
+# sets up daru's login screen for greetd, once per machine:   sudo greetd/install.sh [--scale 1.5] [--output DP-1]
 # and puts greetd's own setup back:                          sudo greetd/install.sh --remove
 #
 # greetd starts cage, which shows ReGreet over the whole screen and is gone again once you're logged in, so nothing of
 # the login screen stays running in your session (SDDM keeps its X server for as long as you're logged in). --scale
-# is for a high-dpi screen, which cage would otherwise draw at scale 1; it needs wlr-randr.
+# is for a high-dpi screen, which cage would otherwise draw at scale 1. --output picks the monitor with more than one
+# plugged in, where cage takes the last one it finds (`wlr-randr` lists their names). both need wlr-randr.
 #
 # the greeter runs as its own user and can't read your home folder, so the shell copies the wallpaper and its colours
 # to /var/lib/daru-greeter, a folder this makes for you (add `regreet` to ~/.config/amane-shell/recolor). ReGreet's
@@ -48,7 +49,7 @@ if [ "${1:-}" = "--remove" ]; then
     restore "$etc/config.toml"
     restore "$etc/regreet.toml"
     restore "$pam"
-    rm -f "$etc/daru-greeter" "$etc/daru-scale"
+    rm -f "$etc/daru-greeter" "$etc/daru-scale" "$etc/daru-output"
     rm -rf "$data"
 
     echo "removed. greetd is back to its own setup. to log in through SDDM again:"
@@ -57,15 +58,34 @@ if [ "${1:-}" = "--remove" ]; then
 fi
 
 scale=1
+output=
 
-if [ "${1:-}" = "--scale" ]; then
-    scale="${2:-}"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --scale | --output)
+            if [ $# -lt 2 ]; then
+                echo "$1 needs a value, like --scale 1.5 or --output DP-1"
+                exit 1
+            fi
 
-    # a plain number, since the greeter's start script reads it
-    if ! printf '%s' "$scale" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
-        echo "--scale takes a number, like 1.5"
-        exit 1
-    fi
+            if [ "$1" = --scale ]; then scale="$2"; else output="$2"; fi
+
+            shift 2
+            ;;
+        *) echo "unknown option $1. it takes --scale 1.5, --output DP-1, or --remove"; exit 1 ;;
+    esac
+done
+
+# a plain number, since the greeter's start script reads it
+if ! printf '%s' "$scale" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+    echo "--scale takes a number, like 1.5"
+    exit 1
+fi
+
+# a monitor's name, like DP-1 or eDP-1, as wlr-randr lists it
+if [ -n "$output" ] && ! printf '%s' "$output" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+    echo "--output takes a monitor's name, like DP-1"
+    exit 1
 fi
 
 for program in greetd cage regreet; do
@@ -75,8 +95,8 @@ for program in greetd cage regreet; do
     fi
 done
 
-if [ "$scale" != 1 ] && ! command -v wlr-randr >/dev/null; then
-    echo "--scale needs wlr-randr: sudo pacman -S wlr-randr"
+if { [ "$scale" != 1 ] || [ -n "$output" ]; } && ! command -v wlr-randr >/dev/null; then
+    echo "--scale and --output need wlr-randr: sudo pacman -S wlr-randr"
     exit 1
 fi
 
@@ -94,6 +114,12 @@ backup "$pam"
 install -m 644 "$here/config.toml" "$here/regreet.toml" "$etc/"
 install -m 755 "$here/daru-greeter" "$etc/"
 printf '%s\n' "$scale" >"$etc/daru-scale"
+
+if [ -n "$output" ]; then
+    printf '%s\n' "$output" >"$etc/daru-output"
+else
+    rm -f "$etc/daru-output"
+fi
 
 install -d -o "$user" -m 755 "$data"
 
