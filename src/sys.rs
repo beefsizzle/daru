@@ -79,7 +79,7 @@ fn counters() -> (u64, u64) {
     (rx, tx)
 }
 
-fn uptime() -> String {
+pub fn uptime() -> String {
     let seconds: f64 = fs::read_to_string("/proc/uptime")
         .ok()
         .and_then(|text| text.split_whitespace().next().and_then(|field| field.parse().ok()))

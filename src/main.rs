@@ -24,6 +24,8 @@ mod power;
 mod sound;
 mod sync;
 mod sys;
+mod sysinfo;
+mod system;
 mod theme;
 mod volume;
 mod tray;
@@ -183,6 +185,7 @@ fn main() {
         .window_per_monitor(sound::view)
         .window_per_monitor(btpanel::view)
         .window_per_monitor(clipboard::view)
+        .window_per_monitor(system::view)
         .lock(lockscreen::view)
         .window_per_monitor(notify::toast_0)
         .window_per_monitor(notify::toast_1)

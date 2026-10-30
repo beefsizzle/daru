@@ -22,9 +22,10 @@ pub enum Which {
     Audio,
     Bluetooth,
     Clipboard,
+    System,
 }
 
-pub const COUNT: usize = 11;
+pub const COUNT: usize = 12;
 
 pub struct Panels {
     pub open: [bool; COUNT], // indexed by `Which`
@@ -299,6 +300,7 @@ pub fn ipc(arguments: &[String]) -> String {
         Some("audio") => Which::Audio,
         Some("bluetooth") => Which::Bluetooth,
         Some("clipboard") => Which::Clipboard,
+        Some("system") => Which::System,
         Some("all") => {
             update(Some(&focused_output()), |open| {
                 *open = [false; COUNT];

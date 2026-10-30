@@ -42,8 +42,8 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
 
     let mut chips: Vec<Box<dyn Widget>> = children![
         tray(&t, &name),
-        cpu(&t),
-        memory(&t),
+        cpu(&t, &name),
+        memory(&t, &name),
         audio(&t, &name),
         bluetooth(&t, &name),
         clipboard(&t, &name),
@@ -246,7 +246,7 @@ fn tray(t: &Theme, name: &str) -> Rectangle {
     chip("tray", t, width, Row::new(icons).gap(4.0).align(Center))
 }
 
-fn cpu(t: &Theme) -> Rectangle {
+fn cpu(t: &Theme, name: &str) -> Rectangle {
     let cpu = Cpu::read();
 
     chip(
@@ -257,9 +257,10 @@ fn cpu(t: &Theme) -> Rectangle {
             .gap(6.0)
             .align(Center),
     )
+    .on_click(toggle_on(name, Which::System))
 }
 
-fn memory(t: &Theme) -> Rectangle {
+fn memory(t: &Theme, name: &str) -> Rectangle {
     let memory = Memory::read();
 
     chip(
@@ -270,6 +271,7 @@ fn memory(t: &Theme) -> Rectangle {
             .gap(6.0)
             .align(Center),
     )
+    .on_click(toggle_on(name, Which::System))
 }
 
 fn audio(t: &Theme, name: &str) -> Rectangle {
@@ -375,6 +377,7 @@ pub enum Slot {
     Clipboard,
     Network,
     Power,
+    System, // the CPU and RAM chips both open it, lined up under the RAM chip
 }
 
 fn bell_width(count: usize) -> f32 {
@@ -396,8 +399,8 @@ pub fn right_edge(slot: Slot) -> i32 {
         (Some(Slot::Clipboard), SQUARE),
         (Some(Slot::Bluetooth), SQUARE),
         (Some(Slot::Audio), STAT),
-        (None, STAT), // memory
-        (None, STAT), // cpu
+        (Some(Slot::System), STAT), // memory
+        (None, STAT),               // cpu
         (Some(Slot::Tray), 0.0), // as wide as its icons, but nothing is placed to its left
     ];
 

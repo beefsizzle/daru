@@ -182,7 +182,7 @@ fn toast(slot: usize, monitor: &Monitor) -> LayerWindow {
 
     // while the center is open the same notifications are already on screen
     // and dropdowns open in the same corner
-    let center_open = [Which::Notifications, Which::Power, Which::Network, Which::TrayMenu, Which::Audio, Which::Bluetooth, Which::Clipboard].iter().any(|which| panels::shown(*which, monitor));
+    let center_open = [Which::Notifications, Which::Power, Which::Network, Which::TrayMenu, Which::Audio, Which::Bluetooth, Which::Clipboard, Which::System].iter().any(|which| panels::shown(*which, monitor));
     let here = notify.monitor.is_empty() || notify.monitor == monitor.name;
 
     let shown = notify.toasts.get(slot).and_then(|id| notifications.list().iter().find(|item| item.id() == *id));

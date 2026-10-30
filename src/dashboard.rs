@@ -265,7 +265,7 @@ fn volume(t: &Theme) -> Row {
 
 // ---------------------------------------------------------------- system
 
-fn severity(t: &Theme, percent: f32) -> amane::Color {
+pub fn severity(t: &Theme, percent: f32) -> amane::Color {
     if percent > 90.0 {
         t.red
     } else if percent > 75.0 {
@@ -275,7 +275,7 @@ fn severity(t: &Theme, percent: f32) -> amane::Color {
     }
 }
 
-fn gauge(t: &Theme, caption: &str, percent: f32, shown: String) -> Column {
+pub fn gauge(t: &Theme, caption: &str, percent: f32, shown: String) -> Column {
     Column::new(children![
         bold(shown, 12.5, t.fg),
         meter(t, 24.0, percent / 100.0, severity(t, percent)),
