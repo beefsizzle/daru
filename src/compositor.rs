@@ -19,11 +19,15 @@ pub fn running() -> Compositor {
     }
 }
 
-/// ends the session without asking
+/*
+ * ends the session without asking. Umbriel takes an action's arguments as separate words (it used to join them with a
+ * colon, and `umbriel msg` now refuses that). logind ends the session if Umbriel can't: right after an update, the
+ * new `umbriel` command can't talk to a compositor that's still the old one until you log in again
+ */
 pub fn log_out() -> &'static str {
     match running() {
         Compositor::Niri => "niri msg action quit --skip-confirmation",
-        Compositor::Umbriel => "umbriel msg session-quit:skip-confirmation",
+        Compositor::Umbriel => "umbriel msg session-quit skip-confirmation || loginctl terminate-session \"$XDG_SESSION_ID\"",
         Compositor::Other => "loginctl terminate-session \"$XDG_SESSION_ID\"",
     }
 }
