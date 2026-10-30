@@ -21,6 +21,7 @@ mod netpanel;
 mod panels;
 mod recolor;
 mod power;
+mod profiles;
 mod sound;
 mod sync;
 mod sys;

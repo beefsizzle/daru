@@ -286,6 +286,13 @@ pub fn changed(before: &[bool; COUNT], after: &[bool; COUNT]) {
         crate::netinfo::refresh();
         crate::wifi::opened();
     }
+
+    // the power dropdown shows the power profile, which can change elsewhere while it's closed
+    let power = Which::Power as usize;
+
+    if !before[power] && after[power] {
+        crate::profiles::refresh();
+    }
 }
 
 pub fn ipc(arguments: &[String]) -> String {

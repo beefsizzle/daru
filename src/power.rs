@@ -1,4 +1,4 @@
-use amane::{Center, Column, Horizontal, Key, Keyboard, LayerWindow, Lock, Monitor, Parent, Rectangle, Row, Start, Widget};
+use amane::{Center, Column, Horizontal, Key, Keyboard, LayerWindow, Lock, Monitor, Parent, Rectangle, Row, Service, Start, Widget};
 
 use crate::panels::{self, Which};
 use crate::theme::{Theme, alpha, mix};
@@ -7,8 +7,15 @@ use crate::ui::{hover, icon, label, set_hover};
 /*
  * the power dropdown under the power button. every entry has a number key, the same one every time,
  * so 3 is always sleep. bound to Alt+X in niri and Umbriel.
+ *
+ * above the entries sits the power profile switcher (power saver, balanced, performance, see profiles.rs), moved by
+ * clicking or with the left and right arrow keys. it hides on a machine without power-profiles-daemon
  */
 const WIDTH: f32 = 250.0;
+
+// the profile tiles, styled like the dashboard's toggle tiles: the one in use is filled with the accent
+const MODE_HEIGHT: f32 = 50.0;
+const MODE_GAP: f32 = 4.0;
 
 // the commands behind the entries, shared with the dashboard's buttons and the `sleep` ipc call. logging out depends
 // on the compositor, see compositor.rs
@@ -66,6 +73,8 @@ fn shut_down() {
 fn on_key(key: Key) {
     match key {
         Key::Escape => panels::close(),
+        Key::Left => crate::profiles::step(-1),
+        Key::Right => crate::profiles::step(1),
         Key::Character(letter) => {
             if let Some(entry) = ENTRIES.iter().find(|entry| entry.key == letter) {
                 (entry.run)();
@@ -112,26 +121,69 @@ fn row(t: &Theme, entry: &Entry) -> Rectangle {
         )
 }
 
+// one profile's tile: its icon over a short name
+fn mode(t: &Theme, profile: &str, active: bool, width: f32) -> Rectangle {
+    let id = format!("power-mode-{profile}");
+    let hot = hover(&id);
+
+    let (glyph, name) = match profile {
+        "power-saver" => ("\u{f06c}", "Saver"),
+        "performance" => ("\u{f0e4}", "Performance"),
+        _ => ("\u{f24e}", "Balanced"),
+    };
+
+    let fill = if active { mix(t.accent_soft, alpha(t.accent, 0.34), hot) } else { mix(alpha(t.surface, 0.0), t.surface_hi, hot) };
+
+    let tint = if active { t.accent } else { t.dim };
+
+    let picked = profile.to_string();
+
+    Rectangle::new()
+        .width(width)
+        .height(MODE_HEIGHT)
+        .fill(fill)
+        .border(1.0, if active { alpha(t.accent, 0.35) } else { t.border })
+        .align_child(Center, Center)
+        .cursor(amane::Pointer)
+        .on_hover(move |inside| set_hover(&id, inside))
+        .on_click(move |_| crate::profiles::pick(&picked))
+        .child(Column::new(vec![Box::new(icon(glyph, 15.0, tint)) as Box<dyn Widget>, Box::new(label(name, 11.0, tint))]).gap(5.0).align(Center))
+}
+
 pub fn view(monitor: &Monitor) -> LayerWindow {
     let Some(t) = panels::look(Which::Power, monitor) else {
         return panels::hidden("amane-panel");
     };
 
+    let profiles = crate::profiles::Profiles::read().clone();
+
     let rows: Vec<Box<dyn Widget>> = ENTRIES.iter().map(|entry| Box::new(row(&t, entry)) as Box<dyn Widget>).collect();
 
-    let height = 28.0 + ROW * ENTRIES.len() as f32 + 2.0 * (ENTRIES.len() as f32 - 1.0) + 8.0 + 16.0;
+    let mut height = 28.0 + ROW * ENTRIES.len() as f32 + 2.0 * (ENTRIES.len() as f32 - 1.0) + 8.0 + 16.0;
+
+    let mut content: Vec<Box<dyn Widget>> = Vec::new();
+
+    let hint = if profiles.available.is_empty() {
+        "press a number, esc to cancel"
+    } else {
+        let count = profiles.available.len() as f32;
+        let width = (WIDTH - 28.0 - MODE_GAP * (count - 1.0)) / count;
+
+        let modes: Vec<Box<dyn Widget>> =
+            profiles.available.iter().map(|profile| Box::new(mode(&t, profile, *profile == profiles.active, width)) as Box<dyn Widget>).collect();
+
+        content.push(Box::new(Row::new(modes).gap(MODE_GAP)));
+
+        height += MODE_HEIGHT + 8.0;
+
+        "a number to pick, ← → for the mode"
+    };
+
+    content.push(Box::new(Column::new(rows).gap(2.0)));
+    content.push(Box::new(label(hint, 10.5, t.faint)));
 
     panels::window_at(WIDTH, height, Horizontal::Right, crate::bar::right_edge(crate::bar::Slot::Power))
         .keyboard(Keyboard::Exclusive)
         .on_key(on_key)
-        .child(
-            panels::body(&t).padding(14.0).child(
-                Column::new(vec![
-                    Box::new(Column::new(rows).gap(2.0)) as Box<dyn Widget>,
-                    Box::new(label("press a number, esc to cancel", 10.5, t.faint)),
-                ])
-                .gap(8.0)
-                .align(Center),
-            ),
-        )
+        .child(panels::body(&t).padding(14.0).child(Column::new(content).gap(8.0).align(Center)))
 }
