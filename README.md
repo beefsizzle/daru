@@ -8,7 +8,11 @@ It's a personal shell, not a plug-and-play one: expect to read the source if you
 
 ![screenshot](media/screenshot.jpg)
 
-https://github.com/user-attachments/assets/a843d4c3-b076-4d88-abff-8120f4c5d30a
+
+
+https://github.com/user-attachments/assets/4ad7ae44-b271-4ada-8535-0eeb0b0ae38e
+
+
 
 ## Running it
 
