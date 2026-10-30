@@ -132,17 +132,22 @@ fn tile(
         .radius(0.0)
         .fill(fill)
         .border(1.0, if active { alpha(t.accent, 0.35) } else { t.border })
-        .padding(11.0)
+        .padding(amane::Padding { top: 7.0, right: 11.0, bottom: 15.0, left: 11.0 })
         .align_child(Start, Start)
         .cursor(amane::Pointer)
         .on_hover(move |inside| set_hover(&id, inside))
         .on_click(on_click)
         .child(
+            /*
+             * 17 + 4 + 15 + 12 fills the 48 inside the padding exactly. the icon's glyph sits a few pixels into its
+             * box while the status has nothing under its letters, so the padding is less on top than underneath, and
+             * the air over the icon and under the status come out the same
+             */
             Column::new(vec![
                 Box::new(icon(glyph, 17.0, tint)),
-                Box::new(Rectangle::new().width(1.0).height(7.0)),
-                tile_text(bold(title, 12.5, t.fg).elide(), 16.0),
-                tile_text(label(subtitle, 10.5, t.dim).elide(), 14.0),
+                Box::new(Rectangle::new().width(1.0).height(4.0)),
+                tile_text(bold(title, 12.5, t.fg).elide(), 15.0),
+                tile_text(label(subtitle, 10.5, t.dim).elide(), 12.0),
             ]),
         )
 }
