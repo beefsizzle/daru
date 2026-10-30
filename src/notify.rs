@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use amane::{
@@ -34,59 +35,125 @@ impl Service for Notify {
 
     /*
      * runs outside `update()`, which holds the service locked: asking niri which monitor has focus takes a process
-     * spawn, and the toast windows read this service while drawing
+     * spawn, and the toast windows read this service while drawing. between rounds it sleeps until the first toast on
+     * screen is due to go, or until the toast windows see something new (`noticed`), so an idle shell never wakes it
      */
     fn listen() {
         loop {
-            std::thread::sleep(Duration::from_millis(500));
+            let due = refresh();
 
-            let (dnd, hidden, previous) = {
-                let notify = Self::read();
+            wait_for_news(due);
+        }
+    }
+}
 
-                (notify.dnd, notify.hidden.clone(), notify.toasts.clone())
-            };
+// picks the notifications shown as toasts, and says how long until the first of them is due to go
+fn refresh() -> Option<Duration> {
+    let (dnd, hidden, previous) = {
+        let notify = Notify::read();
 
-            let mut ids = Vec::new();
+        (notify.dnd, notify.hidden.clone(), notify.toasts.clone())
+    };
 
-            if !dnd {
-                let notifications = Notifications::read();
+    // each with how long it has left
+    let mut shown = Vec::new();
 
-                for notification in notifications.list().iter().rev() {
-                    if hidden.contains(&notification.id()) {
-                        continue;
-                    }
+    if !dnd {
+        let notifications = Notifications::read();
 
-                    let limit = if notification.urgency() == Urgency::Critical { 20 } else { TOAST_SECONDS };
-
-                    let age = SystemTime::now().duration_since(notification.received()).map_or(0, |duration| duration.as_secs());
-
-                    if age < limit {
-                        ids.push(notification.id());
-                    }
-                }
-            }
-
-            ids.truncate(SLOTS);
-
-            // a new popup appears on the monitor you're looking at
-            let monitor = ids.iter().any(|id| !previous.contains(id)).then(crate::panels::focused_output);
-
-            if ids == previous && monitor.is_none() {
+        for notification in notifications.list().iter().rev() {
+            if hidden.contains(&notification.id()) {
                 continue;
             }
 
-            let mut notify = Self::write();
+            let limit = if notification.urgency() == Urgency::Critical { 20 } else { TOAST_SECONDS };
 
-            // one that was dismissed while this round was running stays dismissed
-            let kept: Vec<u32> = ids.into_iter().filter(|id| !notify.hidden.contains(id)).collect();
+            let age = SystemTime::now().duration_since(notification.received()).unwrap_or_default();
 
-            notify.toasts = kept;
-
-            if let Some(monitor) = monitor {
-                notify.monitor = monitor;
+            if age.as_secs() < limit {
+                shown.push((notification.id(), Duration::from_secs(limit).saturating_sub(age)));
             }
         }
     }
+
+    shown.truncate(SLOTS);
+
+    let due = shown.iter().map(|(_, left)| *left).min();
+    let ids: Vec<u32> = shown.into_iter().map(|(id, _)| id).collect();
+
+    // a new popup appears on the monitor you're looking at
+    let monitor = ids.iter().any(|id| !previous.contains(id)).then(crate::panels::focused_output);
+
+    if ids == previous && monitor.is_none() {
+        return due;
+    }
+
+    let mut notify = Notify::write();
+
+    // one that was dismissed while this round was running stays dismissed
+    let kept: Vec<u32> = ids.into_iter().filter(|id| !notify.hidden.contains(id)).collect();
+
+    notify.toasts = kept;
+
+    if let Some(monitor) = monitor {
+        notify.monitor = monitor;
+    }
+
+    due
+}
+
+/*
+ * what the toast windows last saw: how many notifications there are, when the latest arrived (a replacement keeps its
+ * id and place but arrives again), do-not-disturb, and how many were dismissed. `toast()` runs whenever either service
+ * changes, even with no toast on screen, so it's where the toast thread learns there's something new to look at
+ */
+#[derive(PartialEq)]
+struct Seen {
+    count: usize,
+    latest: Option<SystemTime>,
+    dnd: bool,
+    hidden: usize,
+}
+
+struct Watch {
+    seen: Option<Seen>,
+    news: bool, // something changed since the toast thread last looked
+}
+
+static WATCH: Mutex<Watch> = Mutex::new(Watch { seen: None, news: false });
+static NEWS: Condvar = Condvar::new();
+
+fn noticed(notify: &Notify, notifications: &Notifications) {
+    let list = notifications.list();
+
+    let seen = Seen {
+        count: list.len(),
+        latest: list.iter().map(Notification::received).max(),
+        dnd: notify.dnd,
+        hidden: notify.hidden.len(),
+    };
+
+    let mut watch = crate::sync::lock(&WATCH);
+
+    // the toast thread's own changes (which toasts, which monitor) aren't in `Seen`, so they don't wake it again
+    if watch.seen.as_ref() != Some(&seen) {
+        watch.seen = Some(seen);
+        watch.news = true;
+
+        NEWS.notify_one();
+    }
+}
+
+// news that came while the toast thread was busy is kept in `news`, so it returns at once instead of missing it
+fn wait_for_news(due: Option<Duration>) {
+    let watch = crate::sync::lock(&WATCH);
+
+    let mut watch = match due {
+        Some(due) => NEWS.wait_timeout_while(watch, due, |watch| !watch.news).unwrap_or_else(PoisonError::into_inner).0,
+        None => NEWS.wait_while(watch, |watch| !watch.news).unwrap_or_else(PoisonError::into_inner),
+    };
+
+    watch.news = false;
 }
 
 // ---------------------------------------------------------------- toasts
@@ -110,6 +177,8 @@ fn toast(slot: usize, monitor: &Monitor) -> LayerWindow {
     let t = theme();
     let notify = Notify::read();
     let notifications = Notifications::read();
+
+    noticed(&notify, &notifications);
 
     // while the center is open the same notifications are already on screen
     // and dropdowns open in the same corner
