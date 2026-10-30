@@ -8,15 +8,19 @@ use crate::theme::{Theme, hex, mix, over, signal, theme, to_hsl};
 
 /*
  * the wallpaper's colours for other apps, written whenever the shell's own colours change. each app reads its file
- * from its own config, so it has to be pointed at it once (see the README); the shell only ever writes its own files
- * and never edits an app's config. which apps get a file is up to ~/.config/amane-shell/recolor, one name per line:
+ * from its own config, so it has to be pointed at it once (the line to add is under each one). the shell only ever
+ * writes its own files and never edits an app's config. which apps get a file is up to ~/.config/amane-shell/recolor,
+ * one name per line:
  *
  *     gtk       ~/.config/gtk-4.0/daru.css, for GTK4 and libadwaita apps when they next start, and GNOME's accent
- *               setting, which libadwaita apps follow at once, even ones already open
- *     niri      ~/.config/niri/daru-colors.kdl, the focus ring. niri reloads it by itself
+ *               setting, which libadwaita apps follow at once, even ones already open. `@import url("daru.css");` in
+ *               ~/.config/gtk-4.0/gtk.css
+ *     niri      ~/.config/niri/daru-colors.kdl, the focus ring. niri reloads it by itself. `include "daru-colors.kdl"`
+ *               at the end of config.kdl
  *     umbriel   ~/.config/umbriel/daru-colors.toml, the window borders, for `[include.optional] files =
  *               ["daru-colors.toml"]` in Umbriel's config. Umbriel is asked to reload
- *     ghostty   ~/.config/ghostty/daru-colors, background, text, cursor and selection. Ghostty is asked to reload
+ *     ghostty   ~/.config/ghostty/daru-colors, background, text, cursor and selection. Ghostty is asked to reload.
+ *               `config-file = ?daru-colors` in Ghostty's config
  *     zed       ~/.config/zed/themes/daru.json, a theme called "Daru". Zed reloads it by itself
  *     kde       ~/.local/share/color-schemes/Daru.colors, a colour scheme for KDE apps like Dolphin, and the same colours
  *               in ~/.config/kdeglobals, where Qt apps take them from with QT_QPA_PLATFORMTHEME=kde (plasma-integration).
@@ -24,7 +28,7 @@ use crate::theme::{Theme, hex, mix, over, signal, theme, to_hsl};
  *     strata    ~/.config/strata/themes/daru.toml, a theme called "Daru" for the Strata file manager, which reloads it
  *               by itself
  *     btop      ~/.config/btop/themes/daru.theme, for btop, which is told to read its config again (SIGUSR2) and picks up
- *               the new colours at once
+ *               the new colours at once. `color_theme = "daru"` in ~/.config/btop/btop.conf
  *     sddm      /var/lib/daru-sddm, the wallpaper and its colours for the login screen (sddm/ in this repository). the
  *               greeter runs as its own user and can't read the home folder, so they're copied to a folder that
  *               sddm/install.sh makes once, with sudo. nothing is written until it exists
