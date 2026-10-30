@@ -1,4 +1,4 @@
-use amane::{Center, Column, Horizontal, LayerWindow, Monitor, Padding, Parent, Rectangle, Row, Service, SpaceBetween, Start, Widget, children};
+use amane::{Center, Column, Horizontal, LayerWindow, Monitor, Padding, Parent, Rectangle, Row, Service, SpaceBetween, Widget, children};
 
 use crate::clock::Clock;
 use crate::panels::{self, Which};
@@ -28,7 +28,7 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         sections.push(Box::new(hourly(&t, &weather)));
         sections.push(Box::new(week(&t, &weather)));
 
-        height += 64.0 + 14.0 + 78.0 + 14.0 + 18.0 + 14.0 + (weather.days.len() as f32 * 28.0 + 16.0) + 14.0;
+        height += 64.0 + 14.0 + 78.0 + 14.0 + 18.0 + 14.0 + DAY_HEIGHT + 14.0;
     } else {
         sections.push(Box::new(
             Rectangle::new()
@@ -109,44 +109,30 @@ fn hourly(t: &Theme, weather: &Weather) -> Rectangle {
         .child(Row::new(slots).justify(SpaceBetween).width(INNER - 20.0))
 }
 
+/*
+ * the week ahead in one block like the hourly strip above it, today first and lit up like "Now": the day, its weather,
+ * and the high over the low
+ */
+const DAY_HEIGHT: f32 = 92.0;
+
 fn week(t: &Theme, weather: &Weather) -> Column {
-    let lowest = weather.days.iter().map(|day| day.low).fold(f32::MAX, f32::min);
-    let highest = weather.days.iter().map(|day| day.high).fold(f32::MIN, f32::max);
-    let span = (highest - lowest).max(1.0);
-
-    let track = 96.0;
-
-    let mut rows: Vec<Box<dyn Widget>> = Vec::new();
+    let mut days: Vec<Box<dyn Widget>> = Vec::new();
 
     for (index, day) in weather.days.iter().enumerate() {
         let (glyph, _) = describe(day.code, true);
 
-        let start = (day.low - lowest) / span * track;
-        let end = (day.high - lowest) / span * track;
-
-        let bar = Rectangle::new()
-            .width(track)
-            .height(4.0)
-            .radius(0.0)
-            .fill(t.surface_hi)
-            .padding(Padding { top: 0.0, right: 0.0, bottom: 0.0, left: start })
-            .align_child(Start, Center)
-            .child(Rectangle::new().width((end - start).max(6.0)).height(4.0).radius(0.0).fill(t.accent));
-
         let name = if index == 0 { String::from("Today") } else { day.name.clone() };
 
-        rows.push(Box::new(
-            Row::new(children![
-                Rectangle::new().width(54.0).height(18.0).child(if index == 0 { bold(name, 12.0, t.fg) } else { label(name, 12.0, t.dim) }),
-                icon(glyph, 14.0, t.fg),
-                Rectangle::new().width(Parent).height(1.0),
-                Rectangle::new().width(30.0).height(18.0).align_child(amane::End, Center).child(label(degrees(day.low), 12.0, t.dim)),
-                bar,
-                Rectangle::new().width(30.0).height(18.0).child(bold(degrees(day.high), 12.0, t.fg)),
+        days.push(Box::new(
+            Column::new(children![
+                label(name, 10.5, t.dim),
+                icon(glyph, 17.0, if index == 0 { t.accent } else { t.fg }),
+                Column::new(children![bold(degrees(day.high), 12.0, t.fg), label(degrees(day.low), 10.5, t.dim)])
+                    .gap(2.0)
+                    .align(Center),
             ])
-            .gap(10.0)
-            .align(Center)
-            .width(INNER - 24.0),
+            .gap(7.0)
+            .align(Center),
         ));
     }
 
@@ -165,11 +151,12 @@ fn week(t: &Theme, weather: &Weather) -> Column {
         sun,
         Rectangle::new()
             .width(INNER)
-            .height(weather.days.len() as f32 * 28.0 + 16.0)
+            .height(DAY_HEIGHT)
             .radius(0.0)
             .fill(t.surface)
-            .padding(12.0)
-            .child(Column::new(rows).gap(10.0)),
+            .padding(Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 10.0 })
+            .align_child(Center, Center)
+            .child(Row::new(days).justify(SpaceBetween).width(INNER - 20.0)),
     ])
     .gap(14.0)
 }

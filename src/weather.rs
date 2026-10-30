@@ -50,7 +50,7 @@ const QUERY: &str = r#"
 ( ($r.hourly.time | map(. >= ($c.time[:13] + ":00")) | index(true)) as $i
   | range($i; $i + 18; 3)
   | "H|\($r.hourly.time[.][11:16])|\($r.hourly.temperature_2m[.])|\($r.hourly.weather_code[.])|\($r.hourly.is_day[.])" ),
-( range(0; 5) as $d
+( range(0; 7) as $d
   | "D|\($r.daily.time[$d] | strptime("%Y-%m-%d") | mktime | strftime("%a"))|\($r.daily.weather_code[$d])|\($r.daily.temperature_2m_max[$d])|\($r.daily.temperature_2m_min[$d])" ),
 "S|\($r.daily.sunrise[0][11:16])|\($r.daily.sunset[0][11:16])"
 "#;
@@ -63,7 +63,7 @@ fn fetch() -> Weather {
          &current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day\
          &hourly=temperature_2m,weather_code,is_day\
          &daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset\
-         &timezone=auto&forecast_days=6&wind_speed_unit=ms"
+         &timezone=auto&forecast_days=7&wind_speed_unit=ms"
     );
 
     let text = amane::output(&format!("curl -fsS --max-time 15 '{url}' | jq -r '{QUERY}'"));
