@@ -275,13 +275,13 @@ fn memory(t: &Theme) -> Rectangle {
 fn audio(t: &Theme, name: &str) -> Rectangle {
     let audio = Audio::read();
 
-    let glyph = if audio.muted() { "\u{f026}" } else { "\u{f028}" };
+    let glyph = if Level::Output.muted(audio.muted()) { "\u{f026}" } else { "\u{f028}" };
 
     chip(
         "audio",
         t,
         STAT,
-        Row::new(children![icon(glyph, 13.0, t.accent), label(format!("{}%", Level::Output.shown(audio.volume())), 12.0, t.fg)])
+        Row::new(children![icon(glyph, 13.0, t.accent), label(format!("{}%", Level::Output.percent(audio.volume(), audio.muted())), 12.0, t.fg)])
             .gap(6.0)
             .align(Center),
     )

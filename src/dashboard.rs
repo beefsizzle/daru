@@ -201,19 +201,19 @@ fn tiles(t: &Theme) -> Column {
         tile(
             "t-mic",
             t,
-            if audio.microphone_muted() { "\u{f131}" } else { "\u{f130}" },
+            if Level::Input.muted(audio.microphone_muted()) { "\u{f131}" } else { "\u{f130}" },
             "Microphone",
-            if audio.microphone_muted() { "Muted" } else { "Live" },
-            !audio.microphone_muted(),
+            if Level::Input.muted(audio.microphone_muted()) { "Muted" } else { "Live" },
+            !Level::Input.muted(audio.microphone_muted()),
             |_| Audio::toggle_microphone_mute(),
         ),
         tile(
             "t-mute",
             t,
-            if audio.muted() { "\u{f026}" } else { "\u{f028}" },
+            if Level::Output.muted(audio.muted()) { "\u{f026}" } else { "\u{f028}" },
             "Speakers",
-            if audio.muted() { "Muted" } else { "On" },
-            !audio.muted(),
+            if Level::Output.muted(audio.muted()) { "Muted" } else { "On" },
+            !Level::Output.muted(audio.muted()),
             |_| Audio::toggle_mute(),
         ),
         tile("t-shot", t, "\u{f030}", "Screenshot", "Region", false, |_| {
@@ -237,10 +237,11 @@ fn tiles(t: &Theme) -> Column {
 fn volume(t: &Theme) -> Row {
     let audio = Audio::read();
 
-    let percent = Level::Output.shown(audio.volume());
+    let muted = Level::Output.muted(audio.muted());
+    let percent = Level::Output.percent(audio.volume(), audio.muted());
     let level = f32::from(percent) / 100.0;
 
-    let glyph = if audio.muted() {
+    let glyph = if muted {
         "\u{f026}"
     } else if level < 0.4 {
         "\u{f027}"
@@ -249,8 +250,8 @@ fn volume(t: &Theme) -> Row {
     };
 
     Row::new(children![
-        round_button("v-mute", t, glyph, if audio.muted() { t.faint } else { t.accent }, |_| Audio::toggle_mute()),
-        slider(t, 250.0, if audio.muted() { 0.0 } else { level }, volume::drag_output, volume::scroll_output),
+        round_button("v-mute", t, glyph, if muted { t.faint } else { t.accent }, |_| Audio::toggle_mute()),
+        slider(t, 250.0, level, volume::drag_output, volume::scroll_output),
         Rectangle::new()
             .width(44.0)
             .height(20.0)
