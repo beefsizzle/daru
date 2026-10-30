@@ -4,7 +4,7 @@ A desktop shell for [Umbriel](https://docs.noctalia.dev/umbriel/), built with [A
 Bar, tray, dashboard, launcher, notifications, lock screen, wallpaper picker and the usual dropdowns, all coloured
 from the wallpaper.
 
-It's a personal shell, not a plug-and-play one: expect to read the source.
+It's a personal shell, not a plug-and-play one: expect to read the source if you want to try it. 
 
 ![screenshot](media/screenshot.jpg)
 
