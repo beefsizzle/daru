@@ -185,6 +185,8 @@ fn opened(which: Which) {
     match which {
         Which::Launcher => crate::launcher::reset(),
         Which::Clipboard => crate::clipboard::reset(),
+        // the calendar opens on this month, whichever one the arrows were left on
+        Which::Calendar => crate::calendar::reset(),
         // the picker starts on the wallpaper that's showing
         Which::Wallpapers => crate::wallpapers::Wallpapers::write().select_current(),
         _ => {}

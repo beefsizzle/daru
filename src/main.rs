@@ -8,6 +8,7 @@ mod compositor;
 mod calendar;
 mod clock;
 mod dashboard;
+mod events;
 mod focus;
 mod freeze;
 mod icons;
