@@ -14,12 +14,13 @@ const WIDTH: f32 = 372.0;
 const INNER: f32 = WIDTH - 28.0;
 
 /*
- * which month the calendar shows, as months away from this one. the arrows and the wheel move it, clicking the month's
- * name comes back, and it's back on this month whenever the calendar opens
+ * which month the calendar shows, as months away from this one, and the day clicked in it. the arrows and the wheel
+ * move the month, clicking the month's name comes back, and it's back on this month whenever the calendar opens
  */
 #[derive(Default)]
 pub struct Browse {
     months: i32,
+    picked: Option<i64>, // the day clicked, whose events the list shows. days since 1970, like events.rs
     wheel: Wheel,
 }
 
@@ -32,9 +33,31 @@ impl Service for Browse {
 }
 
 pub fn reset() {
-    if Browse::read().months != 0 {
-        Browse::write().months = 0;
+    let browse = Browse::read();
+
+    if browse.months != 0 || browse.picked.is_some() {
+        drop(browse);
+
+        let mut browse = Browse::write();
+
+        browse.months = 0;
+        browse.picked = None;
     }
+}
+
+// a day picked in one month means nothing in the next, so moving lets go of it
+fn turn(browse: &mut Browse, by: i32) {
+    if by != 0 {
+        browse.months += by;
+        browse.picked = None;
+    }
+}
+
+// clicking the picked day again lets go of it
+fn pick(day: i64) {
+    let mut browse = Browse::write();
+
+    browse.picked = if browse.picked == Some(day) { None } else { Some(day) };
 }
 
 // the year and month `months` away from this one
@@ -51,7 +74,11 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
     let weather = Weather::read();
     let clock = Clock::read();
     let events = Events::read();
-    let months = Browse::read().months;
+    let (months, picked) = {
+        let browse = Browse::read();
+
+        (browse.months, browse.picked)
+    };
 
     let (year, month) = shift(clock.year, clock.month, months);
 
@@ -82,9 +109,9 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         height += 56.0 + 14.0;
     }
 
-    sections.push(Box::new(self::month(&t, &clock, &events, year, month, rows)));
+    sections.push(Box::new(self::month(&t, &clock, &events, year, month, rows, picked)));
 
-    if let Some((list, list_height)) = agenda(&t, &events, &clock, year, month, months) {
+    if let Some((list, list_height)) = agenda(&t, &events, &clock, year, month, months, picked) {
         sections.push(Box::new(list));
 
         height += 14.0 + list_height;
@@ -235,9 +262,16 @@ fn month_rows(year: i32, month: u32) -> u32 {
     (weekday(year, month, 1) + days_in(year, month)).div_ceil(7)
 }
 
-// a day of the month, with a small square under it when it has events
-fn cell(t: &Theme, content: impl Widget + 'static, highlight: bool, dot: bool) -> Box<dyn Widget> {
-    let base = Rectangle::new().width(INNER / 7.0).height(32.0).align_child(Center, Center);
+/*
+ * a day of the month, with a small square under it when it has events. today is filled with the accent colour, and
+ * a clicked day is marked more quietly. `day` is none for the blanks around the month, which can't be clicked
+ */
+fn cell(t: &Theme, content: impl Widget + 'static, highlight: bool, picked: bool, dot: bool, day: Option<i64>) -> Box<dyn Widget> {
+    let mut base = Rectangle::new().width(INNER / 7.0).height(32.0).align_child(Center, Center);
+
+    if let Some(day) = day {
+        base = base.cursor(Cursor::Pointer).on_click(move |_| pick(day));
+    }
 
     let mark = Rectangle::new().width(4.0).height(4.0).radius(0.0).fill(match (dot, highlight) {
         (false, _) => alpha(t.accent, 0.0),
@@ -247,16 +281,22 @@ fn cell(t: &Theme, content: impl Widget + 'static, highlight: bool, dot: bool) -
 
     let content = Column::new(children![content, mark]).gap(2.0).align(Center);
 
-    if highlight {
+    if highlight || picked {
         return Box::new(base.child(
-            Rectangle::new().width(28.0).height(28.0).radius(0.0).fill(t.accent).align_child(Center, Center).child(content),
+            Rectangle::new()
+                .width(28.0)
+                .height(28.0)
+                .radius(0.0)
+                .fill(if highlight { t.accent } else { t.surface_hi })
+                .align_child(Center, Center)
+                .child(content),
         ));
     }
 
     Box::new(base.child(content))
 }
 
-fn month(t: &Theme, clock: &Clock, events: &Events, year: i32, month: u32, rows: u32) -> Rectangle {
+fn month(t: &Theme, clock: &Clock, events: &Events, year: i32, month: u32, rows: u32, picked: Option<i64>) -> Rectangle {
     let first = weekday(year, month, 1);
     let count = days_in(year, month);
     let start = days_from_civil(year, month, 1);
@@ -271,8 +311,8 @@ fn month(t: &Theme, clock: &Clock, events: &Events, year: i32, month: u32, rows:
             .cursor(if away { Cursor::Pointer } else { Cursor::Default })
             .on_click(|_| reset())
             .child(Row::new(children![bold(MONTHS[month as usize - 1], 14.0, t.fg), label(year.to_string(), 14.0, t.faint)]).gap(6.0)),
-        round_button("calendar-back", t, "\u{f053}", t.dim, |_| Browse::write().months -= 1),
-        round_button("calendar-on", t, "\u{f054}", t.dim, |_| Browse::write().months += 1),
+        round_button("calendar-back", t, "\u{f053}", t.dim, |_| turn(&mut Browse::write(), -1)),
+        round_button("calendar-on", t, "\u{f054}", t.dim, |_| turn(&mut Browse::write(), 1)),
     ])
     .gap(2.0)
     .align(Center)
@@ -295,7 +335,7 @@ fn month(t: &Theme, clock: &Clock, events: &Events, year: i32, month: u32, rows:
             let index = row * 7 + column;
 
             if index < first || index >= first + count {
-                cells.push(cell(t, label("", 12.0, t.faint), false, false));
+                cells.push(cell(t, label("", 12.0, t.faint), false, false, false, None));
 
                 continue;
             }
@@ -313,7 +353,9 @@ fn month(t: &Theme, clock: &Clock, events: &Events, year: i32, month: u32, rows:
 
             let text = if today { bold(day.to_string(), 12.0, color) } else { label(day.to_string(), 12.0, color) };
 
-            cells.push(cell(t, text, today, events.on(start + day as i64 - 1)));
+            let number = start + day as i64 - 1;
+
+            cells.push(cell(t, text, today, picked == Some(number), events.on(number), Some(number)));
         }
 
         grid.push(Box::new(Row::new(cells)));
@@ -328,7 +370,7 @@ fn month(t: &Theme, clock: &Clock, events: &Events, year: i32, month: u32, rows:
 
             let steps = browse.wheel.steps(scroll.y);
 
-            browse.months += steps;
+            turn(&mut browse, steps);
         })
         .child(Column::new(children![title, Row::new(header), Column::new(grid)]).gap(4.0))
 }
@@ -341,11 +383,22 @@ const AGENDA_GAP: f32 = 8.0;
 
 const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+// "Tue 3 Nov"
+fn short_date(day: i64) -> String {
+    let (_, month, date) = civil_from_days(day);
+
+    format!("{} {date} {}", WEEKDAYS[weekday_of(day) as usize], &MONTHS[month as usize - 1][..3])
+}
+
 /*
  * the next few events from the calendars in ~/.config/amane-shell/calendars (see events.rs), or the first few of the
  * month the arrows moved to. nothing at all when there are none
  */
-fn agenda(t: &Theme, events: &Events, clock: &Clock, year: i32, month: u32, months: i32) -> Option<(Rectangle, f32)> {
+fn agenda(t: &Theme, events: &Events, clock: &Clock, year: i32, month: u32, months: i32, picked: Option<i64>) -> Option<(Rectangle, f32)> {
+    if let Some(day) = picked {
+        return Some(one_day(t, events, day));
+    }
+
     let today = days_from_civil(clock.year, clock.month, clock.day);
 
     let shown: Vec<&Event> = if months == 0 {
@@ -380,9 +433,7 @@ fn agenda(t: &Theme, events: &Events, clock: &Clock, year: i32, month: u32, mont
         } else if event.day == today + 1 {
             String::from("Tomorrow")
         } else {
-            let (_, month, day) = civil_from_days(event.day);
-
-            format!("{} {day} {}", WEEKDAYS[weekday_of(event.day) as usize], &MONTHS[month as usize - 1][..3])
+            short_date(event.day)
         };
 
         rows.push(Box::new(
@@ -398,9 +449,42 @@ fn agenda(t: &Theme, events: &Events, clock: &Clock, year: i32, month: u32, mont
 
     let height = shown.len() as f32 * (AGENDA_ROW + AGENDA_GAP) - AGENDA_GAP + 24.0;
 
-    let list = Rectangle::new().width(INNER).height(height).radius(0.0).fill(t.surface).padding(12.0).child(Column::new(rows).gap(AGENDA_GAP));
+    Some((block(t, rows, height), height))
+}
 
-    Some((list, height))
+// the most events one clicked day lists, more than a busy day usually holds
+const DAY_ROWS: usize = 8;
+
+// everything on a clicked day: its date, then each event's time (or "All day") and title
+fn one_day(t: &Theme, events: &Events, day: i64) -> (Rectangle, f32) {
+    let on: Vec<&Event> = events.list.iter().filter(|event| event.day <= day && day <= event.last).take(DAY_ROWS).collect();
+
+    let mut rows: Vec<Box<dyn Widget>> = vec![Box::new(Rectangle::new().width(INNER - 24.0).height(AGENDA_ROW).child(bold(short_date(day), 12.0, t.fg)))];
+
+    if on.is_empty() {
+        rows.push(Box::new(Rectangle::new().width(INNER - 24.0).height(AGENDA_ROW).child(label("Nothing planned", 12.0, t.dim))));
+    }
+
+    for event in &on {
+        let when = event.time.clone().unwrap_or_else(|| String::from("All day"));
+
+        rows.push(Box::new(
+            Row::new(children![
+                Rectangle::new().width(52.0).height(AGENDA_ROW).child(label(when, 11.5, t.dim)),
+                Rectangle::new().width(INNER - 24.0 - 52.0 - 8.0).height(AGENDA_ROW).child(label(&event.title, 12.0, t.fg).elide()),
+            ])
+            .gap(8.0)
+            .align(Center),
+        ));
+    }
+
+    let height = rows.len() as f32 * (AGENDA_ROW + AGENDA_GAP) - AGENDA_GAP + 24.0;
+
+    (block(t, rows, height), height)
+}
+
+fn block(t: &Theme, rows: Vec<Box<dyn Widget>>, height: f32) -> Rectangle {
+    Rectangle::new().width(INNER).height(height).radius(0.0).fill(t.surface).padding(12.0).child(Column::new(rows).gap(AGENDA_GAP))
 }
 
 #[cfg(test)]
