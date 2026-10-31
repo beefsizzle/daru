@@ -22,10 +22,10 @@ pub enum Which {
     Audio,
     Bluetooth,
     Clipboard,
-    System,
+    System, // keep this one last: COUNT is counted from it
 }
 
-pub const COUNT: usize = 12;
+pub const COUNT: usize = Which::System as usize + 1;
 
 pub struct Panels {
     pub open: [bool; COUNT], // indexed by `Which`
