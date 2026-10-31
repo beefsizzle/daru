@@ -98,8 +98,8 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         )
 }
 
-// the distro's logo, named by LOGO= in /etc/os-release (CachyOS puts it straight in /usr/share/icons, most others in
-// an icon theme). looked up once, the bar is drawn far more often than the distro changes
+// the distro's logo, named by LOGO= in /etc/os-release (CachyOS puts it straight in the icons folder, most others, like
+// NixOS's nix-snowflake, in an icon theme). looked up once, the bar is drawn far more often than the distro changes
 fn distro_logo() -> Option<&'static str> {
     static LOGO: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 
@@ -108,9 +108,9 @@ fn distro_logo() -> Option<&'static str> {
 
         let name = release.lines().find_map(|line| line.strip_prefix("LOGO="))?.trim_matches('"').to_string();
 
-        ["svg", "png"]
+        crate::icons::data_dirs()
             .iter()
-            .map(|extension| format!("/usr/share/icons/{name}.{extension}"))
+            .flat_map(|dir| ["svg", "png"].map(|extension| format!("{dir}/icons/{name}.{extension}")))
             .find(|path| std::path::Path::new(path).exists())
             .or_else(|| crate::icons::resolve(&name))
     })

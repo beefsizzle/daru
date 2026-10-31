@@ -342,12 +342,18 @@ fn stamp(parameters: &str, value: &str) -> Option<(Stamp, Zone)> {
     Some((Stamp { day, minute }, zone))
 }
 
-// only names `date` will understand, so one odd line can't throw off the answers for all the others
+/*
+ * only names `date` will understand, so one odd line can't throw off the answers for all the others. glibc looks for
+ * them in TZDIR when it's set (NixOS sets it to /etc/zoneinfo and has no /usr/share), and in /usr/share/zoneinfo
+ * otherwise; a name found in neither is read as local time
+ */
 fn known_zone(name: &str) -> bool {
+    let folders = [std::env::var("TZDIR").unwrap_or_default(), String::from("/usr/share/zoneinfo"), String::from("/etc/zoneinfo")];
+
     !name.is_empty()
         && !name.contains("..")
         && name.chars().all(|letter| letter.is_ascii_alphanumeric() || "_+-/".contains(letter))
-        && std::path::Path::new("/usr/share/zoneinfo").join(name).is_file()
+        && folders.iter().any(|folder| !folder.is_empty() && std::path::Path::new(folder).join(name).is_file())
 }
 
 fn unescape(text: &str) -> String {

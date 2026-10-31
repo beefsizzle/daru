@@ -21,16 +21,43 @@ const CONTEXTS: [&str; 6] = ["apps", "status", "devices", "panel", "categories",
 const SIZES: [&str; 9] = ["scalable", "symbolic", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32", "22x22"];
 const NUMBERS: [&str; 6] = ["256", "128", "64", "48", "32", "22"];
 
-// where icons live, and which themes to look in under each. Flatpak apps export their icons to their own folders
+/*
+ * the data folders icons live under, the user's first: XDG_DATA_HOME (or ~/.local/share), then each folder in
+ * XDG_DATA_DIRS, which means /usr/local/share and /usr/share when it's unset, as the spec says. NixOS has no
+ * /usr/share at all: its icons sit in the profiles XDG_DATA_DIRS names (/run/current-system/sw/share,
+ * /etc/profiles/per-user/<user>/share), so a fixed /usr/share/icons found nothing there
+ */
+pub fn data_dirs() -> Vec<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+
+    let own = std::env::var("XDG_DATA_HOME").ok().filter(|dir| !dir.is_empty()).unwrap_or_else(|| format!("{home}/.local/share"));
+
+    let system = std::env::var("XDG_DATA_DIRS").ok().filter(|dirs| !dirs.is_empty()).unwrap_or_else(|| String::from("/usr/local/share:/usr/share"));
+
+    let mut dirs = vec![own];
+
+    for dir in system.split(':') {
+        if !dir.is_empty() && !dirs.iter().any(|seen| seen == dir) {
+            dirs.push(dir.to_string());
+        }
+    }
+
+    dirs
+}
+
+// where icons live, and which themes to look in under each. Flatpak apps export their icons to their own folders,
+// which XDG_DATA_DIRS only names when Flatpak's profile script ran, so they're looked in either way
 fn roots() -> Vec<(String, &'static [&'static str])> {
     let home = std::env::var("HOME").unwrap_or_default();
 
-    vec![
-        (format!("{home}/.local/share/icons"), &THEMES),
-        (String::from("/usr/share/icons"), &THEMES),
-        (format!("{home}/.local/share/flatpak/exports/share/icons"), &["hicolor"]),
-        (String::from("/var/lib/flatpak/exports/share/icons"), &["hicolor"]),
-    ]
+    let themes: &'static [&'static str] = &THEMES;
+
+    let mut roots: Vec<(String, &'static [&'static str])> = data_dirs().into_iter().map(|dir| (format!("{dir}/icons"), themes)).collect();
+
+    roots.push((format!("{home}/.local/share/flatpak/exports/share/icons"), &["hicolor"]));
+    roots.push((String::from("/var/lib/flatpak/exports/share/icons"), &["hicolor"]));
+
+    roots
 }
 
 fn find(name: &str) -> Option<String> {
@@ -59,7 +86,7 @@ fn find(name: &str) -> Option<String> {
     }
 
     // apps that ship one loose icon
-    ["png", "svg"].iter().find_map(|extension| check(format!("/usr/share/pixmaps/{name}.{extension}")))
+    data_dirs().iter().find_map(|dir| ["png", "svg"].iter().find_map(|extension| check(format!("{dir}/pixmaps/{name}.{extension}"))))
 }
 
 /// an icon name, a path, or a file:// link, as a path to a PNG or SVG
