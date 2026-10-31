@@ -295,29 +295,60 @@ pub fn changed(before: &[bool; COUNT], after: &[bool; COUNT]) {
     }
 }
 
+const USAGE: &str =
+    "usage: toggle dashboard|calendar|notifications|wallpapers|launcher|power|network|audio|bluetooth|clipboard|system|all|close, or several names to open them together";
+
+fn named(name: &str) -> Option<Which> {
+    Some(match name {
+        "dashboard" => Which::Dashboard,
+        "calendar" => Which::Calendar,
+        "notifications" => Which::Notifications,
+        "wallpapers" => Which::Wallpapers,
+        "launcher" => Which::Launcher,
+        "power" => Which::Power,
+        "network" => Which::Network,
+        "audio" => Which::Audio,
+        "bluetooth" => Which::Bluetooth,
+        "clipboard" => Which::Clipboard,
+        "system" => Which::System,
+        _ => return None,
+    })
+}
+
+/*
+ * opens these panels together on the focused monitor, closing the rest, the way `toggle all` opens its four. made for
+ * screenshots of the whole shell. panels that sit in the same place overlap, and of the ones that take the keyboard
+ * (the launcher, the power dropdown) the compositor decides which gets it, so typing may not reach the launcher
+ */
+fn open_together(which: &[Which]) {
+    update(Some(&focused_output()), |open| {
+        *open = [false; COUNT];
+
+        for panel in which {
+            open[*panel as usize] = true;
+        }
+    });
+
+    for panel in which {
+        opened(*panel);
+    }
+}
+
 pub fn ipc(arguments: &[String]) -> String {
+    // several names: `toggle dashboard calendar launcher` opens those three at once
+    if arguments.len() > 1 {
+        let Some(which) = arguments.iter().map(|name| named(name)).collect::<Option<Vec<Which>>>() else {
+            return String::from(USAGE);
+        };
+
+        open_together(&which);
+
+        return String::from("ok");
+    }
+
     let which = match arguments.first().map(String::as_str) {
-        Some("dashboard") => Which::Dashboard,
-        Some("calendar") => Which::Calendar,
-        Some("notifications") => Which::Notifications,
-        Some("wallpapers") => Which::Wallpapers,
-        Some("launcher") => Which::Launcher,
-        Some("power") => Which::Power,
-        Some("network") => Which::Network,
-        Some("audio") => Which::Audio,
-        Some("bluetooth") => Which::Bluetooth,
-        Some("clipboard") => Which::Clipboard,
-        Some("system") => Which::System,
         Some("all") => {
-            update(Some(&focused_output()), |open| {
-                *open = [false; COUNT];
-
-                for which in [Which::Dashboard, Which::Calendar, Which::Notifications, Which::Wallpapers] {
-                    open[which as usize] = true;
-                }
-            });
-
-            opened(Which::Wallpapers);
+            open_together(&[Which::Dashboard, Which::Calendar, Which::Notifications, Which::Wallpapers]);
 
             return String::from("ok");
         }
@@ -326,7 +357,11 @@ pub fn ipc(arguments: &[String]) -> String {
 
             return String::from("closed");
         }
-        _ => return String::from("usage: toggle dashboard|calendar|notifications|wallpapers|launcher|power|network|audio|bluetooth|clipboard|all|close"),
+        Some(name) => match named(name) {
+            Some(which) => which,
+            None => return String::from(USAGE),
+        },
+        None => return String::from(USAGE),
     };
 
     toggle_here(which);
