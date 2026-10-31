@@ -442,14 +442,19 @@ fn pixmap_file(bus: &Bus, destination: &str, path: &str) -> String {
         // the wire format is ARGB, png wants RGBA
         let mut rgba = Vec::with_capacity(argb.len());
 
-        for pixel in argb.chunks_exact(4) {
+        for pixel in argb.as_chunks::<4>().0 {
             rgba.extend_from_slice(&[pixel[1], pixel[2], pixel[3], pixel[0]]);
         }
 
-        // written under another name and renamed, so a half-written icon is never drawn
-        let partial = file.with_extension("part");
+        // written under another name and renamed, so a half-written icon is never drawn. the name is this write's
+        // own and doesn't start with "tray-", so neither another app with the same icon nor `prune` can touch it
+        static WRITES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+        let partial = directory.join(format!("partial-tray-{}.png", WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
 
         if std::fs::write(&partial, png(width, height, &rgba)).is_err() || std::fs::rename(&partial, &file).is_err() {
+            let _ = std::fs::remove_file(&partial);
+
             return String::new();
         }
     }
