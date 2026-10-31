@@ -89,7 +89,8 @@ pub fn thumbnail_if_ready(path: &str) -> Option<String> {
     complete_jpeg(&thumbnail).then_some(thumbnail)
 }
 
-fn quote(path: &str) -> String {
+// for a path inside a shell command: single quotes, and any single quote in it closed, escaped and reopened
+pub fn quote(path: &str) -> String {
     format!("'{}'", path.replace('\'', "'\\''"))
 }
 

@@ -105,8 +105,15 @@ pub fn region(shot: Shot) {
             return;
         };
 
+        // not /tmp: see cache::runtime_dir
+        let Some(directory) = crate::cache::runtime_dir() else {
+            thaw(&frozen);
+
+            return;
+        };
+
         // taken while the screen is still frozen, then the picture is let go before anything else opens
-        let capture = runtime().join(format!("daru-screenshot-{}.png", COUNT.fetch_add(1, Ordering::Relaxed)));
+        let capture = directory.join(format!("daru-screenshot-{}.png", COUNT.fetch_add(1, Ordering::Relaxed)));
         let taken = Command::new("grim").arg("-g").arg(&region).arg(&capture).status().is_ok_and(|status| status.success());
 
         thaw(&frozen);
@@ -115,17 +122,18 @@ pub fn region(shot: Shot) {
             return;
         }
 
-        let capture = capture.display().to_string();
+        // quoted for the shell, since the folder comes from the environment
+        let capture = crate::wallpapers::quote(&capture.display().to_string());
 
         match shot {
             // saved, copied and announced as every other screenshot is (see compositor.rs)
             Shot::Region => amane::spawn(&format!(
-                "{}; mv \"{capture}\" \"$file\" && {}",
+                "{}; mv {capture} \"$file\" && {}",
                 crate::compositor::SAVE,
                 crate::compositor::DONE
             )),
             // satty saves, copies and notifies by itself, and the capture is left for it to read
-            Shot::Annotate => amane::spawn(&format!("satty --filename \"{capture}\"")),
+            Shot::Annotate => amane::spawn(&format!("satty --filename {capture}")),
             // a whole monitor needs no freeze, compositor::take never sends one here
             Shot::Screen => {}
         }
@@ -142,23 +150,23 @@ fn is_region(text: &str) -> bool {
         && size.split_once('x').is_some_and(|(width, height)| number(width) && number(height))
 }
 
-fn runtime() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from)
-}
-
 /*
  * grabs every monitor and shows the grabs, returning once they're on screen. a monitor that can't be grabbed (it
  * was unplugged) is left live, and when nothing decodes in time the drag simply goes ahead on the live screen
  */
 fn freeze() -> Vec<PathBuf> {
+    let Some(directory) = crate::cache::runtime_dir() else { return Vec::new() };
+
     let monitors: Vec<String> = crate::sync::lock(&MONITORS).iter().cloned().collect();
     let count = COUNT.fetch_add(1, Ordering::Relaxed);
 
     // all at once: on two monitors the second grab mustn't be a frame later than the first
     let grabs: Vec<_> = monitors
         .into_iter()
-        .filter_map(|name| {
-            let path = runtime().join(format!("daru-freeze-{name}-{count}.png"));
+        .enumerate()
+        .filter_map(|(index, name)| {
+            // numbered, not named after the monitor: the name comes from the compositor and stays out of paths
+            let path = directory.join(format!("daru-freeze-{count}-{index}.png"));
 
             // no compression: the grab is read back at once and thrown away, and decoding is what holds things up
             let grim = Command::new("grim").args(["-l", "0", "-o", &name]).arg(&path).stderr(Stdio::null()).spawn().ok()?;
