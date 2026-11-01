@@ -129,7 +129,7 @@ pub fn chip(id: &str, theme: &Theme, width: f32, content: impl Widget + 'static)
 
 /// a horizontal slider. `value` is 0..1, `changed` gets the new 0..1 while dragging, and `scrolled` gets whole wheel
 /// notches while the pointer is over it, up positive
-pub fn slider(t: &Theme, width: f32, value: f32, changed: fn(f32), scrolled: fn(i32)) -> Rectangle {
+pub fn slider(t: &Theme, width: f32, value: f32, changed: impl Fn(f32) + 'static, scrolled: impl Fn(i32) + 'static) -> Rectangle {
     let value = value.clamp(0.0, 1.0);
 
     let layer = |child: Rectangle| {
