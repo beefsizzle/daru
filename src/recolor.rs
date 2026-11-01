@@ -21,7 +21,9 @@ use crate::theme::{Theme, hex, mix, over, signal, theme, to_hsl};
  *               ["daru-colors.toml"]` in Umbriel's config. Umbriel is asked to reload
  *     ghostty   ~/.config/ghostty/daru-colors, background, text, cursor and selection. Ghostty is asked to reload.
  *               `config-file = ?daru-colors` in Ghostty's config
- *     zed       ~/.config/zed/themes/daru.json, a theme called "Daru". Zed reloads it by itself
+ *     foot      ~/.config/foot/daru-colors.ini, the same colours as Ghostty's, for foot windows opened after the change
+ *               (foot can't reload them). `include=~/.config/foot/daru-colors.ini` at the top of foot.ini
+ *     zed      ~/.config/zed/themes/daru.json, a theme called "Daru". Zed reloads it by itself
  *     kde       ~/.local/share/color-schemes/Daru.colors, a colour scheme for KDE apps like Dolphin, and the same colours
  *               in ~/.config/kdeglobals, where Qt apps take them from with QT_QPA_PLATFORMTHEME=kde (plasma-integration).
  *               open ones are told the palette changed, as Plasma does, and recolour at once
@@ -41,6 +43,7 @@ enum App {
     Niri,
     Umbriel,
     Ghostty,
+    Foot,
     Zed,
     Kde,
     Strata,
@@ -62,6 +65,7 @@ fn wanted() -> Vec<App> {
             "niri" => Some(App::Niri),
             "umbriel" => Some(App::Umbriel),
             "ghostty" => Some(App::Ghostty),
+            "foot" => Some(App::Foot),
             "zed" => Some(App::Zed),
             "kde" => Some(App::Kde),
             "strata" => Some(App::Strata),
@@ -111,6 +115,9 @@ pub fn export() {
                     if write(&config("ghostty/daru-colors"), &ghostty(&colors)) {
                         reload_ghostty();
                     }
+                }
+                App::Foot => {
+                    write(&config("foot/daru-colors.ini"), &foot(&colors));
                 }
                 App::Zed => {
                     write(&config("zed/themes/daru.json"), &zed(&colors));
@@ -383,6 +390,33 @@ fn ghostty(c: &Colors) -> String {
     for (index, color) in [(0, c.surface), (7, c.dim), (8, c.faint), (15, c.text)] {
         text.push_str(&format!("palette = {index}={}\n", hex(color)));
     }
+
+    text
+}
+
+// Ghostty's colours in foot's terms: its theme section, plain hex without the #, the cursor as "text cursor", and the
+// black and white ones of the 16 by name (regular0 is palette 0, bright7 is palette 15)
+fn foot(c: &Colors) -> String {
+    let plain = |color: Color| hex(color).trim_start_matches('#').to_string();
+
+    let lines = [
+        ("background", c.background),
+        ("foreground", c.text),
+        ("selection-background", mix(c.background, c.accent, 0.35)),
+        ("selection-foreground", c.text),
+        ("regular0", c.surface),
+        ("regular7", c.dim),
+        ("bright0", c.faint),
+        ("bright7", c.text),
+    ];
+
+    let mut text = format!("# {HEADER}\n\n[colors-dark]\n");
+
+    for (key, color) in lines {
+        text.push_str(&format!("{key}={}\n", plain(color)));
+    }
+
+    text.push_str(&format!("cursor={} {}\n", plain(c.on_accent), plain(c.accent)));
 
     text
 }
