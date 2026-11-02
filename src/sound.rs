@@ -282,11 +282,14 @@ fn run_all(calls: Vec<Vec<String>>) {
 
 // ---------------------------------------------------------------- what the app rows do
 
+// app name -> (its streams, the level to send them)
+type Levels = HashMap<String, (Vec<u32>, u8)>;
+
 /*
  * a drag sends a new level every frame, and a pactl process for each would pile up. so the newest level per app waits
  * here, and one thread sends whatever is newest until nothing is left: levels passed over meanwhile are never sent
  */
-static WANTED: Mutex<Option<HashMap<String, (Vec<u32>, u8)>>> = Mutex::new(None);
+static WANTED: Mutex<Option<Levels>> = Mutex::new(None);
 
 static SENDING: AtomicBool = AtomicBool::new(false);
 
