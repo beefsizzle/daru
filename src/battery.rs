@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use amane::Service;
 
@@ -29,6 +29,7 @@ pub struct Sample {
     pub percent: u8,
     pub energy: Option<f64>, // Wh left
     pub draining: bool,      // on battery, as opposed to charging or plugged in
+    pub after_sleep: bool,   // the first since the computer was suspended, see `History::listen`
 }
 
 /*
@@ -45,17 +46,30 @@ impl Service for History {
         Self::default()
     }
 
+    /*
+     * `at` is an Instant, which doesn't count time spent suspended, so a night asleep would look like one minute and
+     * the charge lost over it like a huge draw. the wall clock does count it: a sample more than two minutes after the
+     * last by the wall clock follows a suspend, and the draw starts again from it
+     */
     fn listen() {
         let Some(path) = find() else { return };
 
+        let mut last: Option<SystemTime> = None;
+
         loop {
             let status = read(&path, "status");
+
+            let wall = SystemTime::now();
+            let after_sleep = last.is_some_and(|last| wall.duration_since(last).unwrap_or_default() > 2 * SAMPLE_EVERY);
+
+            last = Some(wall);
 
             let sample = Sample {
                 at: Instant::now(),
                 percent: number(&path, "capacity").map_or(0, |percent| percent.clamp(0.0, 100.0) as u8),
                 energy: watt_hours(&path, "now"),
                 draining: status == "Discharging",
+                after_sleep,
             };
 
             {
@@ -79,17 +93,27 @@ impl Service for History {
  *
  * the kernel's own power_now isn't used on battery: it can't be trusted everywhere. the laptop's aftermarket battery
  * never reads below its charge divided by ten hours, so above about 45% it says ~5 W at idle against a real 2.6-2.9 W
- * (worked out from the charge used, the way ~/powercheck.sh does). charging, power_now is real, see `Details`
+ * (worked out from the charge used over time). charging, power_now is real, see `Details`
  */
 pub fn draw(samples: &VecDeque<Sample>) -> Option<(f32, Duration)> {
     let newest = samples.back().filter(|sample| sample.draining)?;
 
-    let oldest = samples
-        .iter()
-        .rev()
-        .take_while(|sample| sample.draining && sample.energy.is_some())
-        .take_while(|sample| newest.at.duration_since(sample.at) <= DRAW_OVER)
-        .last()?;
+    let mut oldest = None;
+
+    for sample in samples.iter().rev() {
+        if !sample.draining || sample.energy.is_none() || newest.at.duration_since(sample.at) > DRAW_OVER {
+            break;
+        }
+
+        oldest = Some(sample);
+
+        // what it lost while asleep isn't what it draws awake
+        if sample.after_sleep {
+            break;
+        }
+    }
+
+    let oldest = oldest?;
 
     let span = newest.at.duration_since(oldest.at);
 
@@ -238,7 +262,7 @@ mod tests {
         readings
             .iter()
             .enumerate()
-            .map(|(minute, &(energy, draining))| Sample { at: start + Duration::from_secs(60 * minute as u64), percent: 50, energy: Some(energy), draining })
+            .map(|(minute, &(energy, draining))| Sample { at: start + Duration::from_secs(60 * minute as u64), percent: 50, energy: Some(energy), draining, after_sleep: false })
             .collect()
     }
 
@@ -264,6 +288,28 @@ mod tests {
 
         // and says nothing while it charges
         assert!(draw(&minutes(&[(30.0, false); 12])).is_none());
+    }
+
+    #[test]
+    fn the_draw_starts_again_after_a_suspend() {
+        // 3 W for ten minutes, a night asleep that cost 4 Wh but looks like one minute, then 3 W for six more
+        let mut readings: Vec<(f64, bool)> = (0..=10).map(|minute| (40.0 - 0.05 * f64::from(minute), true)).collect();
+
+        readings.extend((0..=6).map(|minute| (35.5 - 0.05 * f64::from(minute), true)));
+
+        let mut samples = minutes(&readings);
+
+        samples[11].after_sleep = true;
+
+        let (watts, over) = draw(&samples).unwrap();
+
+        assert!((watts - 3.0).abs() < 0.01);
+        assert_eq!(over, Duration::from_secs(360));
+
+        // and says nothing for its first five minutes awake
+        samples.truncate(15);
+
+        assert!(draw(&samples).is_none());
     }
 
     #[test]
