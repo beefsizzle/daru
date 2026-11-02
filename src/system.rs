@@ -2,14 +2,15 @@ use amane::{Center, Column, End, Horizontal, LayerWindow, Monitor, Parent, Recta
 
 use crate::dashboard::{gauge, severity};
 use crate::panels::{self, Which};
+use crate::sys::format_rate;
 use crate::sysinfo::{SysInfo, bytes};
 use crate::theme::Theme;
-use crate::ui::{bold, label, meter, section};
+use crate::ui::{bold, icon, label, meter, section, sparkline};
 
 /*
  * the System dropdown, from the bar's CPU and RAM chips: the dashboard's meters with more behind them. every core,
- * the graphics card, memory and temperatures side by side, the drives, and what's keeping the processor busy. the
- * numbers come from sysinfo.rs, which only reads them while this is open
+ * the graphics card, memory and temperatures side by side, the drives with what they read and write, and what's
+ * keeping the processor busy. the numbers come from sysinfo.rs, which only reads them while this is open
  */
 const WIDTH: f32 = 372.0;
 const INNER: f32 = WIDTH - 28.0;
@@ -18,6 +19,10 @@ const GAUGE: f32 = 96.0; // a dashboard gauge: its number, 53 of meter, its capt
 const METER: f32 = 53.0; // 12 blocks of 3.5 with a gap of 1 between them
 const ROW: f32 = 16.0;
 const ROW_GAP: f32 = 6.0;
+
+// under the drives: a line with the speed, its graph, and the total since boot under that
+const ACTIVITY_GRAPH: f32 = 22.0;
+const ACTIVITY: f32 = ROW + 4.0 + ACTIVITY_GRAPH + 4.0 + 14.0;
 
 pub fn view(monitor: &Monitor) -> LayerWindow {
     let Some(t) = panels::look(Which::System, monitor) else {
@@ -58,7 +63,7 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         if !info.disks.is_empty() {
             parts.push(Box::new(disks(&t, &info)));
 
-            height += 14.0 + block_height(info.disks.len());
+            height += 14.0 + block_height(info.disks.len()) + 8.0 + ACTIVITY;
         }
 
         if !info.processes.is_empty() {
@@ -146,8 +151,9 @@ fn tiles(t: &Theme, info: &SysInfo) -> (Row, f32) {
         stat(t, "Swap", format!("{} / {}", short(memory.swap_used), bytes(memory.swap_total)), inside),
     ];
 
+    // the drives' own temperatures are shown with them, see `disks`
     let temperature_rows: Vec<Box<dyn Widget>> =
-        info.temps.iter().map(|(name, degrees)| Box::new(stat(t, name, format!("{degrees:.0}\u{b0}"), inside)) as Box<dyn Widget>).collect();
+        info.temps.iter().filter(|(name, _)| !is_drive(name)).map(|(name, degrees)| Box::new(stat(t, name, format!("{degrees:.0}\u{b0}"), inside)) as Box<dyn Widget>).collect();
 
     let rows = memory_rows.len().max(temperature_rows.len());
     let height = block_height(rows);
@@ -164,7 +170,8 @@ fn short(amount: u64) -> String {
     format!("{:.1}", amount as f64 / (1u64 << 30) as f64)
 }
 
-// each drive: where it's mounted, how full, and how much of how much
+// each drive: where it's mounted, how full, and how much of how much. then what they all read and write, with their
+// temperature next to the title
 fn disks(t: &Theme, info: &SysInfo) -> Rectangle {
     let track = 120.0;
 
@@ -194,7 +201,42 @@ fn disks(t: &Theme, info: &SysInfo) -> Rectangle {
         })
         .collect();
 
-    surface(t, INNER, block_height(info.disks.len())).child(Column::new(children![section("Drives", t), Column::new(rows).gap(ROW_GAP)]).gap(8.0))
+    let degrees: Vec<String> = info.temps.iter().filter(|(name, _)| is_drive(name)).map(|(_, degrees)| format!("{degrees:.0}\u{b0}")).collect();
+
+    let heading = Row::new(children![section("Drives", t), Rectangle::new().width(Parent).height(1.0), label(degrees.join("  "), 11.0, t.dim)]).align(Center).width(INNER - 24.0);
+
+    let half = (INNER - 24.0 - 16.0) / 2.0;
+
+    let io = &info.io;
+
+    let activity = Row::new(children![
+        activity(t, half, "\u{f063}", "Read", io.read, &io.read_history, io.read_total),
+        activity(t, half, "\u{f062}", "Write", io.written, &io.write_history, io.write_total),
+    ])
+    .gap(16.0);
+
+    surface(t, INNER, block_height(info.disks.len()) + 8.0 + ACTIVITY)
+        .child(Column::new(children![heading, Column::new(rows).gap(ROW_GAP), activity]).gap(8.0))
+}
+
+// one side of the drives' activity: the speed now, the last minute and a half of it, and the total since boot. the
+// graph is at least 1 MB/s tall, so the trickle of writes an idle system does stays flat
+fn activity(t: &Theme, width: f32, glyph: &str, name: &str, rate: f64, history: &[f32], total: u64) -> Column {
+    Column::new(children![
+        Row::new(children![icon(glyph, 10.0, t.accent), label(name, 11.5, t.dim), Rectangle::new().width(Parent).height(1.0), label(format_rate(rate), 11.5, t.fg)])
+            .gap(6.0)
+            .align(Center)
+            .width(width)
+            .height(ROW),
+        sparkline(t, width, ACTIVITY_GRAPH, history, t.accent, 1_048_576.0),
+        Rectangle::new().width(width).height(14.0).child(label(format!("{} since boot", bytes(total)), 10.5, t.faint)),
+    ])
+    .gap(4.0)
+}
+
+// the drive temperatures sysinfo.rs names "NVMe", "NVMe 2" and so on
+fn is_drive(name: &str) -> bool {
+    name.starts_with("NVMe")
 }
 
 // the busiest few, with how much of a core each one keeps busy and the memory it holds

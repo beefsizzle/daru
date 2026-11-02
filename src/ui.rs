@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use amane::{
-    Animation, Button, Center, Color, Column, Image, Point, Pointer, Rectangle, Service, Stack, Start, Text, Weight,
+    Animation, Button, Center, Color, Column, Image, Point, Pointer, Rectangle, Row, Service, Stack, Start, Text, Weight,
     Widget, children,
 };
 
@@ -156,6 +156,33 @@ pub fn slider(t: &Theme, width: f32, value: f32, changed: impl Fn(f32) + 'static
         // up (negative) raises it
         .on_scroll(move |scroll| scrolled(wheel_steps(-scroll.y)))
         .child(Stack::new(children![layer(track), layer(filled), knob]))
+}
+
+/*
+ * recent numbers as thin bars, the newest on the right and brightest. the scale is the biggest of them, but at least
+ * `floor`, so a quiet line stays flat instead of blowing tiny numbers up to full height
+ */
+pub fn sparkline(t: &Theme, width: f32, height: f32, data: &[f32], color: Color, floor: f32) -> Row {
+    let top = data.iter().copied().fold(floor, f32::max);
+
+    let count = data.len().max(2);
+    let bar = 3.0;
+    let gap = ((width - bar * count as f32) / (count - 1) as f32).max(0.0);
+
+    let mut bars: Vec<Box<dyn Widget>> = Vec::new();
+
+    for (index, value) in data.iter().enumerate() {
+        let newest = index == data.len() - 1;
+
+        let fill = Rectangle::new()
+            .width(bar)
+            .height((height * value / top).max(1.0))
+            .fill(if newest { color } else { alpha(color, 0.55) });
+
+        bars.push(Box::new(Rectangle::new().width(bar).height(height).fill(alpha(t.fg, 0.04)).align_child(Center, amane::End).child(fill)));
+    }
+
+    Row::new(bars).gap(gap)
 }
 
 /// a vertical meter made of small blocks, lit from the bottom. blocks are plain rectangles,

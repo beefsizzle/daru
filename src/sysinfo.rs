@@ -25,6 +25,7 @@ pub struct SysInfo {
     pub gpu: Option<Gpu>,  // only an AMD card says how busy it is through /sys
     pub temps: Vec<(String, f32)>, // ("CPU", 45.0), ("GPU", 40.0), ...
     pub disks: Vec<Disk>,
+    pub io: Io,
     pub processes: Vec<Process>,
 }
 
@@ -50,6 +51,20 @@ pub struct Disk {
     pub used: u64,
     pub size: u64,
 }
+
+// what the drives read and write, all of them together
+#[derive(Default, Clone, PartialEq)]
+pub struct Io {
+    pub read: f64, // bytes per second
+    pub written: f64,
+    pub read_history: Vec<f32>, // the last HISTORY rounds, two seconds apart, oldest first
+    pub write_history: Vec<f32>,
+    pub read_total: u64, // bytes since boot
+    pub write_total: u64,
+}
+
+// how many rounds the drive graphs show: a minute and a half, as the network dropdown's
+pub const HISTORY: usize = 40;
 
 #[derive(Clone, PartialEq)]
 pub struct Process {
@@ -78,6 +93,11 @@ impl Service for SysInfo {
             let mut round = 0u32;
             let mut disks = Vec::new();
 
+            // the drives' counters a round ago, and what they did since, newest last
+            let mut io_before = (Instant::now(), drive_bytes());
+            let mut read_history = vec![0.0; HISTORY];
+            let mut write_history = vec![0.0; HISTORY];
+
             std::thread::sleep(Duration::from_millis(500));
 
             while panels::is_open(Which::System) {
@@ -87,6 +107,20 @@ impl Service for SysInfo {
                 if round.is_multiple_of(15) {
                     disks = self::disks();
                 }
+
+                let io_now = (Instant::now(), drive_bytes());
+
+                let seconds = io_now.0.duration_since(io_before.0).as_secs_f64().max(0.1);
+
+                let read = io_now.1.0.saturating_sub(io_before.1.0) as f64 / seconds;
+                let written = io_now.1.1.saturating_sub(io_before.1.1) as f64 / seconds;
+
+                read_history.remove(0);
+                read_history.push(read as f32);
+                write_history.remove(0);
+                write_history.push(written as f32);
+
+                io_before = io_now;
 
                 let info = SysInfo {
                     ready: true,
@@ -100,6 +134,14 @@ impl Service for SysInfo {
                     gpu: gpu.as_deref().map(read_gpu),
                     temps: temps(gpu.as_deref()),
                     disks: disks.clone(),
+                    io: Io {
+                        read,
+                        written,
+                        read_history: read_history.clone(),
+                        write_history: write_history.clone(),
+                        read_total: io_before.1.0,
+                        write_total: io_before.1.1,
+                    },
                     processes: now.busiest(&before, PROCESSES),
                 };
 
@@ -411,6 +453,35 @@ fn disks() -> Vec<Disk> {
     }
 
     by_source.into_iter().map(|(_, disk)| disk).collect()
+}
+
+/*
+ * bytes read and written since boot by every real drive, from /proc/diskstats. a drive is one with a device behind it
+ * in /sys/block, which leaves out partitions (they'd count their drive twice), zram, loop files and LUKS or LVM
+ * mappings, whose reads land on a real drive too. the kernel counts in 512-byte sectors whatever the drive uses
+ */
+fn drive_bytes() -> (u64, u64) {
+    let text = fs::read_to_string("/proc/diskstats").unwrap_or_default();
+
+    let mut totals = (0, 0);
+
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+
+        // major minor name, then reads, merged reads, sectors read, time reading, writes, merged writes, sectors written
+        let (Some(name), Some(read), Some(written)) = (fields.get(2), fields.get(5), fields.get(9)) else {
+            continue;
+        };
+
+        if !Path::new("/sys/block").join(name).join("device").exists() {
+            continue;
+        }
+
+        totals.0 += read.parse::<u64>().unwrap_or(0) * 512;
+        totals.1 += written.parse::<u64>().unwrap_or(0) * 512;
+    }
+
+    totals
 }
 
 /// "12.3 GB", "512 MB"

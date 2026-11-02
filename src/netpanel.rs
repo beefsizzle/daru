@@ -1,5 +1,5 @@
 use amane::{
-    AccessPoint, Center, Color, Column, Horizontal, Key, Keyboard, LayerWindow, Link, Monitor, Network, Parent, Rectangle, Row,
+    AccessPoint, Center, Column, Horizontal, Key, Keyboard, LayerWindow, Link, Monitor, Network, Parent, Rectangle, Row,
     ScrollArea, Service, Start, TextInput, Widget, children,
 };
 
@@ -7,7 +7,7 @@ use crate::netinfo::Netinfo;
 use crate::panels::{self, Which};
 use crate::sys::{Sys, format_rate};
 use crate::theme::{Theme, alpha, mix};
-use crate::ui::{bold, chip, hover, icon, label, round_button, section, set_hover};
+use crate::ui::{bold, chip, hover, icon, label, round_button, section, set_hover, sparkline};
 use crate::wifi::{self, Wifi};
 
 const WIDTH: f32 = 372.0;
@@ -25,30 +25,6 @@ fn bytes(count: u64) -> String {
     }
 }
 
-// the last minute and a half of traffic as thin bars. the scale is at least 100 KB/s, so an idle line stays flat
-fn sparkline(t: &Theme, width: f32, height: f32, data: &[f32], color: Color) -> Row {
-    let top = data.iter().copied().fold(100_000.0, f32::max);
-
-    let count = data.len().max(2);
-    let bar = 3.0;
-    let gap = ((width - bar * count as f32) / (count - 1) as f32).max(0.0);
-
-    let mut bars: Vec<Box<dyn Widget>> = Vec::new();
-
-    for (index, value) in data.iter().enumerate() {
-        let newest = index == data.len() - 1;
-
-        let fill = Rectangle::new()
-            .width(bar)
-            .height((height * value / top).max(1.0))
-            .fill(if newest { color } else { alpha(color, 0.55) });
-
-        bars.push(Box::new(Rectangle::new().width(bar).height(height).fill(alpha(t.fg, 0.04)).align_child(Center, amane::End).child(fill)));
-    }
-
-    Row::new(bars).gap(gap)
-}
-
 fn speed_card(t: &Theme, caption: &str, glyph: &str, rate: f64, history: &[f32]) -> Rectangle {
     Rectangle::new()
         .width((INNER - 10.0) / 2.0)
@@ -61,7 +37,8 @@ fn speed_card(t: &Theme, caption: &str, glyph: &str, rate: f64, history: &[f32])
             Column::new(children![
                 Row::new(children![icon(glyph, 11.0, t.accent), section(caption, t)]).gap(7.0).align(Center),
                 bold(format_rate(rate), 18.0, t.fg),
-                sparkline(t, (INNER - 10.0) / 2.0 - 24.0, 26.0, history, t.accent),
+                // at least 100 KB/s tall, so an idle line stays flat
+                sparkline(t, (INNER - 10.0) / 2.0 - 24.0, 26.0, history, t.accent, 100_000.0),
             ])
             .gap(5.0),
         )
