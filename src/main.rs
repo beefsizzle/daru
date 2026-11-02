@@ -1,4 +1,5 @@
 mod bar;
+mod batpanel;
 mod battery;
 mod btpanel;
 mod btstate;
@@ -71,6 +72,9 @@ fn main() {
 
     // starts listening for lock requests and suspend
     drop(logind::Logind::read());
+
+    // starts noting the battery's charge once a minute, for its dropdown's graph and draw (see battery.rs)
+    drop(battery::History::read());
 
     // the lock screen also unlocks with an enrolled fingerprint (fprintd), next to the password
     amane::Lock::use_fingerprint();
@@ -187,6 +191,7 @@ fn main() {
         .window_per_monitor(btpanel::view)
         .window_per_monitor(clipboard::view)
         .window_per_monitor(system::view)
+        .window_per_monitor(batpanel::view)
         .lock(lockscreen::view)
         .window_per_monitor(notify::toast_0)
         .window_per_monitor(notify::toast_1)

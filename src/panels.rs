@@ -22,6 +22,7 @@ pub enum Which {
     Audio,
     Bluetooth,
     Clipboard,
+    Battery,
     System, // keep this one last: COUNT is counted from it
 }
 
@@ -296,7 +297,7 @@ pub fn changed(before: &[bool; COUNT], after: &[bool; COUNT]) {
 }
 
 const USAGE: &str =
-    "usage: toggle dashboard|calendar|notifications|wallpapers|launcher|power|network|audio|bluetooth|clipboard|system|all|close, or several names to open them together";
+    "usage: toggle dashboard|calendar|notifications|wallpapers|launcher|power|network|audio|bluetooth|clipboard|battery|system|all|close, or several names to open them together";
 
 fn named(name: &str) -> Option<Which> {
     Some(match name {
@@ -310,6 +311,7 @@ fn named(name: &str) -> Option<Which> {
         "audio" => Which::Audio,
         "bluetooth" => Which::Bluetooth,
         "clipboard" => Which::Clipboard,
+        "battery" => Which::Battery,
         "system" => Which::System,
         _ => return None,
     })

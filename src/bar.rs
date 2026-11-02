@@ -51,7 +51,7 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         bell(&t, &name),
     ];
 
-    if let Some(battery) = battery(&t) {
+    if let Some(battery) = battery(&t, &name) {
         chips.push(Box::new(battery));
     }
 
@@ -335,8 +335,9 @@ fn bell(t: &Theme, name: &str) -> Rectangle {
     .on_click(toggle_on(name, Which::Notifications))
 }
 
-// the charge left, on a computer with a battery. a desktop has none, and no room is left for one
-fn battery(t: &Theme) -> Option<Rectangle> {
+// the charge left, on a computer with a battery. a desktop has none, and no room is left for one. a click opens its
+// dropdown (batpanel.rs)
+fn battery(t: &Theme, name: &str) -> Option<Rectangle> {
     let battery = Battery::read();
 
     if !battery.present() {
@@ -356,7 +357,8 @@ fn battery(t: &Theme) -> Option<Rectangle> {
         Row::new(children![icon(crate::battery::glyph(percent, charging, full), 13.0, glyph_color), label(format!("{percent}%"), 12.0, text_color)])
             .gap(6.0)
             .align(Center),
-    ))
+    )
+    .on_click(toggle_on(name, Which::Battery)))
 }
 
 fn power(t: &Theme, name: &str) -> Rectangle {
@@ -377,6 +379,7 @@ pub enum Slot {
     Clipboard,
     Network,
     Power,
+    Battery,
     System, // the CPU and RAM chips both open it, lined up under the RAM chip
 }
 
@@ -393,7 +396,7 @@ pub fn right_edge(slot: Slot) -> i32 {
     let from_the_right = [
         (Some(Slot::Power), SQUARE),
         // only on a computer with a battery (see `battery`): without one, -GAP cancels the gap added below
-        (None, if battery { STAT } else { -GAP }),
+        (Some(Slot::Battery), if battery { STAT } else { -GAP }),
         (None, bell_width(Notifications::read().list().len())),
         (Some(Slot::Network), SQUARE),
         (Some(Slot::Clipboard), SQUARE),
