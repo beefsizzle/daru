@@ -10,7 +10,7 @@ pub struct Focus {
 }
 
 /// the string value of `"key":"..."` in a line of JSON, with its escapes undone
-fn json_string(text: &str, key: &str) -> Option<String> {
+pub fn json_string(text: &str, key: &str) -> Option<String> {
     let start = text.find(&format!("\"{key}\":\""))? + key.len() + 4;
 
     let mut result = String::new();
@@ -59,6 +59,17 @@ fn read() -> String {
  * the window object that says "focused":true. that can't appear inside a title, where its quotes would be escaped
  */
 fn focused_title(snapshot: &str) -> String {
+    objects(snapshot)
+        .into_iter()
+        .find(|window| window.contains("\"focused\":true"))
+        .map_or_else(String::new, |window| json_string(window, "title").unwrap_or_default())
+}
+
+/// the objects in the list of one of Umbriel's events, {"data":[{...},{...}],"event":"..."}, each as its own text.
+/// braces inside strings (a window titled "{draft}") don't count
+pub fn objects(snapshot: &str) -> Vec<&str> {
+    let mut found = Vec::new();
+
     let (mut depth, mut in_string, mut escaped, mut start) = (0, false, false, 0);
 
     for (at, letter) in snapshot.char_indices() {
@@ -84,11 +95,7 @@ fn focused_title(snapshot: &str) -> String {
             }
             '}' => {
                 if depth == 2 {
-                    let window = &snapshot[start..=at];
-
-                    if window.contains("\"focused\":true") {
-                        return json_string(window, "title").unwrap_or_default();
-                    }
+                    found.push(&snapshot[start..=at]);
                 }
 
                 depth -= 1;
@@ -97,7 +104,7 @@ fn focused_title(snapshot: &str) -> String {
         }
     }
 
-    String::new()
+    found
 }
 
 impl Service for Focus {

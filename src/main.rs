@@ -14,6 +14,7 @@ mod focus;
 mod freeze;
 mod icons;
 mod launcher;
+mod layouts;
 mod lockscreen;
 mod logind;
 mod notify;

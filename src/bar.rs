@@ -29,11 +29,15 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
     let t = theme();
     let name = monitor.name.clone();
 
-    let left = Row::new(children![
-        launcher(&t, &name),
-        workspaces(&t, monitor),
-        title(&t),
-    ])
+    let mut left: Vec<Box<dyn Widget>> = children![launcher(&t, &name), workspaces(&t, monitor)];
+
+    if let Some(layout) = layout(&t, &name) {
+        left.push(Box::new(layout));
+    }
+
+    left.push(Box::new(title(&t)));
+
+    let left = Row::new(left)
     .gap(10.0)
     .align(Center);
 
@@ -164,6 +168,21 @@ fn workspaces(t: &Theme, monitor: &Monitor) -> Rectangle {
     let width = 20.0 + dots.len() as f32 * 14.0 + 14.0;
 
     chip("workspaces", t, width, Row::new(dots).gap(6.0).align(Center))
+}
+
+/*
+ * on Umbriel, the layout of the workspace on screen, as a picture: a click moves it to the next one and a right click
+ * back (see layouts.rs). nothing on another compositor, which has no such switch
+ */
+fn layout(t: &Theme, name: &str) -> Option<Rectangle> {
+    let layout = crate::layouts::Layouts::read().on(name)?.to_string();
+
+    let output = name.to_string();
+
+    Some(
+        chip("layout", t, SQUARE, icon(crate::layouts::glyph(&layout), 14.0, t.dim))
+            .on_click(move |button| crate::layouts::cycle(&output, if matches!(button, amane::Button::Right) { -1 } else { 1 })),
+    )
 }
 
 fn title(t: &Theme) -> Rectangle {
