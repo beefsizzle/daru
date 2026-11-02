@@ -68,13 +68,15 @@ impl Service for Layouts {
         }
 
         loop {
-            for line in amane::lines("umbriel subscribe workspaces") {
+            compositor::umbriel_events(&["workspaces"], |line| {
                 let fresh = read(&line);
 
                 if fresh != Self::read().by_output {
                     Self::write().by_output = fresh;
                 }
-            }
+
+                true
+            });
 
             std::thread::sleep(Duration::from_secs(2));
         }
@@ -116,7 +118,7 @@ mod tests {
 
     #[test]
     fn reads_the_layout_on_screen_on_each_monitor() {
-        // trimmed from `umbriel subscribe workspaces`
+        // trimmed from Umbriel's workspaces event
         let event = r#"{"data":[
             {"active":true,"focused":true,"id":"eDP-1:1","index":1,"layout":"scrolling","name":"1","output":"eDP-1"},
             {"active":false,"focused":false,"id":"eDP-1:2","index":2,"layout":"dwindle","name":"2","output":"eDP-1"},

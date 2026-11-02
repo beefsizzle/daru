@@ -189,10 +189,16 @@ fn follow_niri(noted: &std::sync::mpsc::Sender<Option<String>>) {
  */
 fn follow_umbriel(noted: &std::sync::mpsc::Sender<Option<String>>) {
     loop {
-        for line in amane::lines("umbriel subscribe windows") {
-            if noted.send(Some(line)).is_err() {
-                return;
-            }
+        let mut gone = false;
+
+        compositor::umbriel_events(&["windows"], |line| {
+            gone = noted.send(Some(line)).is_err();
+
+            !gone
+        });
+
+        if gone {
+            return;
         }
 
         std::thread::sleep(Duration::from_secs(2));

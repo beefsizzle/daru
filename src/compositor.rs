@@ -9,6 +9,37 @@ pub enum Compositor {
     Other,
 }
 
+/*
+ * Umbriel's event stream for these families (see its ipc docs), straight from its socket: `each` gets every line, the
+ * state as it is first and then a whole new snapshot on every change. `umbriel subscribe` does the same, but kept a
+ * process of about 9 MB running for each family followed. returns when Umbriel goes away or `each` says to stop
+ */
+pub fn umbriel_events(families: &[&str], mut each: impl FnMut(String) -> bool) {
+    use std::io::{BufRead, BufReader, Write};
+
+    let Some(path) = std::env::var_os("UMBRIEL_SOCKET") else { return };
+    let Ok(mut socket) = std::os::unix::net::UnixStream::connect(path) else { return };
+
+    let names: Vec<String> = families.iter().map(|family| format!("\"{family}\"")).collect();
+
+    if socket.write_all(format!("{{\"cmd\":\"subscribe\",\"events\":[{}]}}\n", names.join(",")).as_bytes()).is_err() {
+        return;
+    }
+
+    for line in BufReader::new(socket).lines() {
+        let Ok(line) = line else { return };
+
+        // a reply to the request rather than an event
+        if line.starts_with("{\"ok\"") || line.starts_with("{\"err\"") {
+            continue;
+        }
+
+        if !each(line) {
+            return;
+        }
+    }
+}
+
 pub fn running() -> Compositor {
     if std::env::var_os("NIRI_SOCKET").is_some() {
         Compositor::Niri
