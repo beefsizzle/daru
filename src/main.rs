@@ -17,6 +17,7 @@ mod launcher;
 mod layouts;
 mod lockscreen;
 mod logind;
+mod nixupdates;
 mod notify;
 mod netinfo;
 mod netpanel;

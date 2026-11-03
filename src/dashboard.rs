@@ -3,11 +3,12 @@ use amane::{
 };
 
 use crate::btstate::BtState;
+use crate::nixupdates::NixUpdates;
 use crate::notify::Notify;
 use crate::panels::{self, Panels, Which};
 use crate::sys::{Sys, format_rate};
 use crate::theme::{Theme, alpha, mix};
-use crate::ui::{bold, hover, icon, label, meter, round_button, set_hover, slider};
+use crate::ui::{ago, bold, chip, hover, icon, label, meter, round_button, set_hover, slider};
 use crate::volume::{self, Level};
 
 const WIDTH: f32 = 372.0;
@@ -20,14 +21,21 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         return panels::hidden("amane-panel");
     };
     // header 40, tiles 2 rows, volume 30, system 125, and the gaps between them
-    let height = 28.0 + 40.0 + 14.0 + (TILE_HEIGHT * 2.0 + 10.0) + 14.0 + 30.0 + 14.0 + 125.0;
+    let mut height = 28.0 + 40.0 + 14.0 + (TILE_HEIGHT * 2.0 + 10.0) + 14.0 + 30.0 + 14.0 + 125.0;
 
-    let sections: Vec<Box<dyn Widget>> = vec![
+    let mut sections: Vec<Box<dyn Widget>> = vec![
         Box::new(header(&t)),
         Box::new(tiles(&t)),
         Box::new(volume(&t)),
         Box::new(system(&t)),
     ];
+
+    // only on NixOS, built from a flake
+    if let Some(row) = nix_updates(&t) {
+        height += 14.0 + NIX_ROW;
+
+        sections.push(Box::new(row));
+    }
 
     panels::window(WIDTH, height, Horizontal::Left).child(
         panels::body(&t).padding(14.0).child(Column::new(sections).gap(14.0)),
@@ -316,4 +324,84 @@ fn system(t: &Theme) -> Column {
     .width(INNER);
 
     Column::new(children![rings, speeds]).gap(10.0)
+}
+
+// ---------------------------------------------------------------- nixos updates
+
+const NIX_ROW: f32 = 32.0;
+const NIX_BUTTON: f32 = 70.0;
+
+/*
+ * a line for the flake's updates: which inputs have newer commits, or how old nixpkgs is when none do. the button
+ * runs the update in a terminal when there's one, and checks again now when there isn't
+ */
+fn nix_updates(t: &Theme) -> Option<Row> {
+    let state = NixUpdates::read();
+
+    if state.flake.is_none() || state.inputs.is_empty() {
+        return None;
+    }
+
+    let behind: Vec<&str> = state.behind().iter().map(|input| input.name.as_str()).collect();
+
+    let checked = match state.checked.map(ago) {
+        Some(when) if when == "now" => String::from("checked just now"),
+        Some(when) => format!("checked {when} ago"),
+        None => String::from("not checked yet"),
+    };
+
+    let age = state.input("nixpkgs").map(|nixpkgs| format!("nixpkgs is {} old", ago(nixpkgs.modified)));
+
+    let title = if !behind.is_empty() {
+        "Updates available"
+    } else if state.checked.is_none() {
+        "NixOS"
+    } else {
+        "Up to date"
+    };
+
+    let subtitle = if state.checking {
+        String::from("Checking GitHub\u{2026}")
+    } else if !behind.is_empty() {
+        format!("{} \u{b7} {checked}", behind.join(", "))
+    } else if state.failed {
+        [Some(String::from("Couldn't check")), age].into_iter().flatten().collect::<Vec<_>>().join(" \u{b7} ")
+    } else {
+        [age, Some(checked)].into_iter().flatten().collect::<Vec<_>>().join(" \u{b7} ")
+    };
+
+    let updates = !behind.is_empty();
+
+    let badge = Rectangle::new()
+        .width(30.0)
+        .height(30.0)
+        .radius(0.0)
+        .fill(if updates { t.accent_soft } else { t.surface })
+        .border(1.0, if updates { alpha(t.accent, 0.35) } else { t.border })
+        .align_child(Center, Center)
+        .child(icon("\u{f313}", 14.0, if updates { t.accent } else { t.dim }));
+
+    let width = INNER - 30.0 - NIX_BUTTON - 2.0 * 10.0;
+
+    let line = |text: amane::Text, height: f32| Rectangle::new().width(width).height(height).child(text.elide());
+
+    let text = Column::new(children![
+        line(bold(title, 12.5, t.fg), 16.0),
+        line(label(subtitle, 10.5, t.dim), 13.0),
+    ])
+    .gap(2.0);
+
+    let button = chip("nix-update", t, NIX_BUTTON, label(if updates { "Update" } else { "Check" }, 11.5, if updates { t.accent } else { t.dim }))
+        .on_click(move |_| {
+            if updates {
+                panels::close();
+
+                crate::nixupdates::update();
+            } else {
+                // the check waits on GitHub, which mustn't hold up the click
+                std::thread::spawn(crate::nixupdates::check);
+            }
+        });
+
+    Some(Row::new(children![badge, text, button]).gap(10.0).align(Center).width(INNER))
 }
