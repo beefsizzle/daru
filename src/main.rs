@@ -101,7 +101,7 @@ fn main() {
         .font(TEXT_FONT)
         .ipc("toggle", panels::ipc)
         .ipc("wallpaper", wallpaper::ipc)
-        // `amane ipc call recolor` writes the colours for other apps again, after one was set up (sddm/install.sh)
+        // `amane ipc call recolor` writes the colours for other apps again, after one was set up (greetd/install.sh)
         .ipc("recolor", |_| {
             recolor::export();
 

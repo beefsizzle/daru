@@ -30,7 +30,7 @@ amane run
 ```
 
 Panels open with `amane ipc call toggle <name>` (see `src/panels.rs`). Other apps can follow the wallpaper's colours
-too (see `src/recolor.rs`), and `greetd/` and `sddm/` hold two login screens, each with its own `install.sh`.
+too (see `src/recolor.rs`), and `greetd/` holds a login screen for greetd, with its own `install.sh`.
 
 ## License
 

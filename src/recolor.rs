@@ -31,11 +31,9 @@ use crate::theme::{Theme, hex, mix, over, signal, theme, to_hsl};
  *               by itself
  *     btop      ~/.config/btop/themes/daru.theme, for btop, which is told to read its config again (SIGUSR2) and picks up
  *               the new colours at once. `color_theme = "daru"` in ~/.config/btop/btop.conf
- *     sddm      /var/lib/daru-sddm, the wallpaper and its colours for the login screen (sddm/ in this repository). the
- *               greeter runs as its own user and can't read the home folder, so they're copied to a folder that
- *               sddm/install.sh makes once, with sudo. nothing is written until it exists
- *     regreet   /var/lib/daru-greeter, the same for the login screen under greetd (greetd/ in this repository): the
- *               wallpaper and a stylesheet for ReGreet, in a folder greetd/install.sh makes once, with sudo
+ *     regreet   /var/lib/daru-greeter, the wallpaper and a stylesheet for ReGreet, the login screen under greetd
+ *               (greetd/ in this repository). the greeter runs as its own user and can't read the home folder, so
+ *               they're copied to a folder greetd/install.sh makes once, with sudo. nothing is written until it exists
  */
 #[derive(Clone, Copy, PartialEq)]
 enum App {
@@ -48,7 +46,6 @@ enum App {
     Kde,
     Strata,
     Btop,
-    Sddm,
     Regreet,
 }
 
@@ -70,7 +67,6 @@ fn wanted() -> Vec<App> {
             "kde" => Some(App::Kde),
             "strata" => Some(App::Strata),
             "btop" => Some(App::Btop),
-            "sddm" => Some(App::Sddm),
             "regreet" => Some(App::Regreet),
             _ => None,
         })
@@ -149,9 +145,6 @@ pub fn export() {
                     if write(&config("btop/themes/daru.theme"), &btop(&colors)) {
                         reload_btop();
                     }
-                }
-                App::Sddm => {
-                    login_screen(&colors);
                 }
                 App::Regreet => {
                     greeter(&colors);
@@ -631,30 +624,15 @@ fn strata(c: &Colors) -> String {
     text
 }
 
-// where the login screen reads from. made by sddm/install.sh, owned by the user and readable by SDDM's greeter
-const SDDM_DIR: &str = "/var/lib/daru-sddm";
-
-// the wallpaper, blurred, and the colours, for the login screen to show on the next boot or logout
-fn login_screen(c: &Colors) {
-    let folder = Path::new(SDDM_DIR);
-
-    // not set up on this machine
-    if !folder.is_dir() {
-        return;
-    }
-
-    let shown = login_wallpaper(folder);
-
-    write(&folder.join("theme.conf.user"), &sddm(c, shown.as_deref()));
-}
-
 // where ReGreet's wallpaper and stylesheet go. made by greetd/install.sh, owned by the user, readable by the greeter
 const GREETER_DIR: &str = "/var/lib/daru-greeter";
 
-// the same for ReGreet under greetd: greetd/regreet.toml reads wallpaper.jpg, greetd/daru-greeter the stylesheet
+// the wallpaper, blurred, and the colours, for the login screen to show on the next boot or logout: greetd/regreet.toml
+// reads wallpaper.jpg, greetd/daru-greeter the stylesheet
 fn greeter(c: &Colors) {
     let folder = Path::new(GREETER_DIR);
 
+    // not set up on this machine
     if !folder.is_dir() {
         return;
     }
@@ -665,10 +643,10 @@ fn greeter(c: &Colors) {
 }
 
 /*
- * the blurred wallpaper as `folder`/wallpaper.jpg, or the one already there when this wallpaper has no blurred copy
- * yet. none when there's neither, and the login screen shows its background colour
+ * the blurred wallpaper as `folder`/wallpaper.jpg. when this wallpaper has no blurred copy yet, the one already there
+ * stays, and with neither the login screen shows its background colour
  */
-fn login_wallpaper(folder: &Path) -> Option<PathBuf> {
+fn login_wallpaper(folder: &Path) {
     /*
      * it's only seen at the next logout, so the blur below waits for the wallpaper's fade to finish rather than
      * taking the cores the fade is drawn with. a fade takes under half a second; this gives up waiting after two
@@ -683,12 +661,10 @@ fn login_wallpaper(folder: &Path) -> Option<PathBuf> {
 
     let chosen = crate::wallpaper::Wallpaper::read().path.clone();
 
-    let picture = folder.join("wallpaper.jpg");
-
-    let copied = crate::wallpapers::make_blurred(&chosen).is_some_and(|blurred| copy(Path::new(&blurred), &picture));
-
     // the previous wallpaper stays when this one has no copy yet, the colours always follow
-    (copied || picture.is_file()).then_some(picture)
+    if let Some(blurred) = crate::wallpapers::make_blurred(&chosen) {
+        copy(Path::new(&blurred), &folder.join("wallpaper.jpg"));
+    }
 }
 
 // copied under another name and renamed, like `write`, and only when it changed
@@ -702,31 +678,6 @@ fn copy(from: &Path, to: &Path) -> bool {
     let partial = to.with_extension("daru-part");
 
     std::fs::write(&partial, &new).is_ok() && std::fs::rename(&partial, to).is_ok()
-}
-
-// the keys sddm/Main.qml reads. colours are quoted, or the # would start a comment
-fn sddm(c: &Colors, wallpaper: Option<&Path>) -> String {
-    let lines = [
-        ("backgroundColor", c.background),
-        ("surface", c.surface),
-        ("border", c.border),
-        ("text", c.text),
-        ("dim", c.dim),
-        ("faint", c.faint),
-        ("accent", c.accent),
-        ("onAccent", c.on_accent),
-        ("danger", c.red),
-    ];
-
-    let mut text = format!("# {HEADER}\n\n[General]\n");
-
-    text.push_str(&format!("background={}\n", wallpaper.map(|path| path.display().to_string()).unwrap_or_default()));
-
-    for (key, color) in lines {
-        text.push_str(&format!("{key}=\"{}\"\n", hex(color)));
-    }
-
-    text
 }
 
 /*
@@ -1091,31 +1042,6 @@ mod tests {
 
             assert!(value.len() == 7 && value.starts_with('#'), "{line}");
         }
-    }
-
-    #[test]
-    fn the_login_screen_gets_every_colour_main_qml_reads() {
-        let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c)));
-
-        let conf = super::sddm(&colors, Some(std::path::Path::new("/var/lib/daru-sddm/wallpaper.jpg")));
-
-        assert!(conf.contains("[General]\n"));
-        assert!(conf.contains("background=/var/lib/daru-sddm/wallpaper.jpg\n"));
-
-        // quoted, or QSettings would read the # as the start of a comment
-        for key in ["backgroundColor", "surface", "border", "text", "dim", "faint", "accent", "onAccent", "danger"] {
-            let line = conf.lines().find(|line| line.starts_with(&format!("{key}="))).unwrap_or_else(|| panic!("no {key}"));
-            let value = line.split_once('=').unwrap().1;
-
-            assert!(value.len() == 9 && value.starts_with("\"#") && value.ends_with('"'), "{line}");
-        }
-    }
-
-    #[test]
-    fn without_a_wallpaper_the_login_screen_shows_the_background_colour() {
-        let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c)));
-
-        assert!(super::sddm(&colors, None).contains("\nbackground=\n"));
     }
 
     #[test]
