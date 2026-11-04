@@ -32,6 +32,9 @@ amane run
 Panels open with `amane ipc call toggle <name>` (see `src/panels.rs`). Other apps can follow the wallpaper's colours
 too (see `src/recolor.rs`), and `greetd/` holds a login screen for greetd, with its own `install.sh`.
 
+`umbriel/config.toml` is an example Umbriel config for daru: Umbriel's own starting config with daru starting at
+login, its panels on the keybinds, and blur behind its bar and panels. Copy it to `~/.config/umbriel/config.toml`.
+
 ## License
 
 [MIT](LICENSE)

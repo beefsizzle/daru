@@ -1,0 +1,404 @@
+# Umbriel starting configuration, set up for the daru shell
+#
+# Copy this file to ~/.config/umbriel/config.toml. Most changes apply when the
+# file is saved. Check edits with `umbriel config validate`.
+#
+# Complete reference: https://docs.noctalia.dev/umbriel/
+#
+# Commented settings below are examples, not built-in defaults.
+#
+# This is Umbriel's own starting config with daru in place of Noctalia: daru
+# starts with the session, its panels are on the keybinds, and its bar and
+# panels get frosted glass. Lines marked "daru" differ from Umbriel's file.
+
+# ==============================================================================
+# Includes
+
+# Optional split configuration
+# https://docs.noctalia.dev/umbriel/configuration/#include
+[include]
+files = []
+
+# daru: the window border colours, which daru takes from the wallpaper. Add
+# `umbriel` to ~/.config/amane-shell/recolor for daru to write this file.
+[include.optional]
+files = ["~/.config/umbriel/daru-colors.toml"]
+
+# ==============================================================================
+# General
+# Optional session examples. XWayland support is enabled by default.
+# https://docs.noctalia.dev/umbriel/configuration/#general
+#
+[general]
+# daru, and the clipboard history its clipboard panel shows (wl-clipboard and cliphist)
+autostart = [
+    "amane run",
+    "wl-paste --type text --watch cliphist -max-items 200 store",
+    "wl-paste --type image --watch cliphist -max-items 200 store",
+]
+# daru: no keybind cheatsheet at login (Mod+Shift+Slash still shows it)
+show_cheatsheet = false
+# xwayland = false
+# Sharp X11 apps and games on scaled outputs; they see physical resolutions.
+# xwayland_native_resolution = true
+# Umbriel announces the X11 interface scale and cursor theme through XSETTINGS.
+# Turn this off to run your own manager, such as xsettingsd.
+# xwayland_xsettings = false
+# Select the monitor X11 games use as primary, using a connector or monitor identity from `umbriel outputs`.
+# xwayland_primary_output = "DP-1"
+# NVIDIA outputs without explicit synchronization wait for GPU rendering by default.
+# Disable this workaround if it causes stuttering or frame drops.
+# nvidia_sync_workaround = false
+# Modal dialogs hang on their parent window and follow it. Turn this off to keep them ordinary windows.
+# attach_modal_dialogs = false
+
+# ==============================================================================
+# Lid events
+# Remove the laptop panel from the desktop while the lid is closed, then
+# restore it when the lid opens. Replace eDP-1 with the name from
+# `umbriel outputs`.
+# https://docs.noctalia.dev/umbriel/configuration/#events
+#
+# [events]
+# lid_close = "umbriel msg output-disable eDP-1"
+# lid_open = "umbriel msg output-enable eDP-1"
+
+# ==============================================================================
+# Screencast
+# By default, the first target-changing action during an active share asks for
+# confirmation. Disable that protection only if immediate keybind changes are
+# preferred.
+# https://docs.noctalia.dev/umbriel/configuration/#screencast
+#
+# [screencast]
+# disable_dynamic_confirmation = true
+
+# ==============================================================================
+# Outputs
+# Outputs are machine-specific. Run `umbriel outputs` to find names and modes.
+# https://docs.noctalia.dev/umbriel/outputs/
+#
+# [output.DP-1]
+# mode = "2560x1440@144"
+# position = [0, 0]
+# scale = 1.25
+# vrr = "fullscreen"
+# hdr = "auto"
+# sdr_transfer = "gamma22" # Or "srgb" for piecewise SDR decoding in HDR.
+
+# ==============================================================================
+# Appearance
+# https://docs.noctalia.dev/umbriel/appearance/
+#
+# daru: square corners and a thin border, like the shell
+[appearance]
+corner_radius = 0
+border_width = 1
+
+# daru: a stronger blur than Umbriel's starting radius of 3, for the glass behind the shell
+[appearance.blur]
+radius = 10
+noise = 0.02
+saturation = 1.5
+
+[appearance.shadow]
+enabled = true
+softness = 30
+
+[colors]
+shadow = "#00000077"
+# Choose the background color shown if the lock screen takes too long to appear.
+# backdrop = "#000000FF"
+
+# Optional title bar with modifier-free dragging and floating frame resizing.
+# [appearance.title_bar]
+# mode = "on" # Follow client decoration preferences.
+# Use "negotiated" to hide bars on Wayland windows that do not negotiate decorations.
+# Use "forced" to always show bars, or "off" to hide them. Window rules can override this.
+# height = 28
+# font = "sans 10"
+# button_position = "right" # or "left"
+# buttons = ["minimize", "maximize", "close"] # From the title outward; leave one out to hide it.
+# button_corner_radius = -1 # Follow the window's corner_radius; 0 makes square buttons.
+# button_glyph = "hover" # X, square, and underscore symbols: "always", "hover" (while hovered or pressed), or "never".
+# button_background = true # Show colored backgrounds behind the symbols.
+
+# ==============================================================================
+# Effects
+# Every effect is off until a preset is selected; border and window effects
+# scale with overview zoom. Include a bundled preset (adjust /usr for the
+# package prefix), then select it by name.
+# https://docs.noctalia.dev/umbriel/effects/
+#
+# [include]
+# files = ["/usr/share/umbriel/effects/border/pulse/effect.toml"]
+# For a cursor tail, include /usr/share/umbriel/effects/cursor/trail/effect.toml
+# and set cursor = "trail" in [effects].
+#
+# [effects]
+# border = "pulse"
+
+# ==============================================================================
+# Input
+# Enable NumLock for the first physical keyboard; later devices inherit current locks.
+# https://docs.noctalia.dev/umbriel/input/
+#
+# [input]
+#
+[input.keyboard]
+numlock_toggle = true
+
+# Focus can follow the pointer across tiled, floating, and pinned windows.
+# daru: on, and a window mostly off screen is scrolled into view by at most a
+# tenth of the screen's width when the pointer brushes past it
+[input.focus]
+follows_mouse = true
+follows_mouse_max_scroll = 0.1
+# hover_raises = false # Hover focuses only; clicks and keybinds raise.
+
+# On a laptop: tap to click and natural scrolling.
+# [input.touchpad]
+# tap = true
+# natural_scroll = true
+
+# Confine touch input to one display.
+#
+# [input.touch]
+# enabled = true
+# map_to_output = "eDP-1"
+
+# ==============================================================================
+# Keybinds
+# Defining this table replaces the built-in bind set, so every active bind that
+# should remain available is listed here.
+# Syntax: https://docs.noctalia.dev/umbriel/keybinds/
+# Actions: https://docs.noctalia.dev/umbriel/actions/
+#
+# daru: its panels open with `amane ipc call toggle <panel>`, and these keys
+# follow niri's defaults more than Umbriel's
+[keybinds]
+
+# Applications
+"Mod+T" = { action = "spawn foot", repeat = false }
+"Mod+B" = { action = "spawn firefox", repeat = false }
+
+# The shell
+"Mod+Space" = { action = "spawn amane ipc call toggle launcher", repeat = false }
+"Mod+D" = { action = "spawn amane ipc call toggle launcher", repeat = false }
+"Mod+Shift+D" = { action = "spawn amane ipc call toggle dashboard", repeat = false }
+"Alt+X" = { action = "spawn amane ipc call toggle dashboard", repeat = false }
+"Mod+Alt+C" = { action = "spawn amane ipc call toggle calendar", repeat = false }
+"Mod+Shift+N" = { action = "spawn amane ipc call toggle notifications", repeat = false }
+"Mod+Shift+W" = { action = "spawn amane ipc call toggle wallpapers", repeat = false }
+"Mod+Ctrl+V" = { action = "spawn amane ipc call toggle clipboard", repeat = false }
+"Mod+X" = { action = "spawn amane ipc call toggle power", repeat = false }
+"Mod+Alt+L" = { action = "spawn amane ipc call lock", repeat = false }
+
+# Media, volume and brightness keys from any input device. Safe while the session is locked.
+# daru: straight to wpctl, playerctl and brightnessctl
+"XF86AudioRaiseVolume" = { action = "spawn wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1+ -l 1.0", allow_when_locked = true }
+"XF86AudioLowerVolume" = { action = "spawn wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1-", allow_when_locked = true }
+"XF86AudioMute" = { action = "spawn wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle", allow_when_locked = true, repeat = false }
+"XF86AudioMicMute" = { action = "spawn wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle", allow_when_locked = true, repeat = false }
+"XF86AudioPlay" = { action = "spawn playerctl play-pause", allow_when_locked = true, repeat = false }
+"XF86AudioStop" = { action = "spawn playerctl stop", allow_when_locked = true, repeat = false }
+"XF86AudioPrev" = { action = "spawn playerctl previous", allow_when_locked = true }
+"XF86AudioNext" = { action = "spawn playerctl next", allow_when_locked = true }
+"XF86MonBrightnessUp" = { action = "spawn brightnessctl --class=backlight set +5%", allow_when_locked = true }
+"XF86MonBrightnessDown" = { action = "spawn brightnessctl --class=backlight set 5%-", allow_when_locked = true }
+
+# Screenshots, through daru: saved in ~/Pictures/Screenshots, copied, and announced.
+# Shift+Print opens the region in satty to draw on first
+"Print" = { action = "spawn amane ipc call screenshot region", repeat = false }
+"Ctrl+Print" = { action = "spawn amane ipc call screenshot screen", repeat = false }
+"Shift+Print" = { action = "spawn amane ipc call screenshot annotate", repeat = false }
+
+# Session
+"Mod+Q" = { action = "window-close", repeat = false }
+"Mod+O" = { action = "overview-toggle", repeat = false }
+"Mod+Shift+Slash" = { action = "cheatsheet-toggle", repeat = false }
+"Mod+Escape" = { action = "shortcuts-inhibit-toggle", allow_when_inhibited = true, repeat = false }
+"Mod+Shift+E" = "session-quit"
+"Ctrl+Alt+Delete" = "session-quit"
+"Mod+Shift+P" = "dpms-off"
+
+# Scratchpad
+"Mod+S" = { action = "scratchpad-toggle", repeat = false }
+"Mod+Shift+S" = { action = "window-move-to-scratchpad", repeat = false }
+
+# Focus
+"Mod+Left" = "window-focus-left"
+"Mod+Down" = "window-focus-down"
+"Mod+Up" = "window-focus-up"
+"Mod+Right" = "window-focus-right"
+"Mod+H" = "window-focus-left"
+"Mod+J" = "window-focus-down"
+"Mod+K" = "window-focus-up"
+"Mod+L" = "window-focus-right"
+# daru: Alt+Tab opens the overview to pick a window, as Umbriel has no switcher list
+"Alt+Tab" = { action = "overview-toggle", repeat = false }
+"Alt+Shift+Tab" = "window-focus-previous"
+"Mod+Home" = "column-focus-first"
+"Mod+End" = "column-focus-last"
+"Mod+Shift+Left" = "output-focus-left"
+"Mod+Shift+Right" = "output-focus-right"
+"Mod+Shift+H" = "output-focus-left"
+"Mod+Shift+L" = "output-focus-right"
+"Mod+WheelUp" = "window-focus-left"
+"Mod+WheelDown" = "window-focus-right"
+
+# Movement
+"Mod+Ctrl+Left" = "column-move-left"
+"Mod+Ctrl+Down" = "window-move-down"
+"Mod+Ctrl+Up" = "window-move-up"
+"Mod+Ctrl+Right" = "column-move-right"
+"Mod+Ctrl+H" = "column-move-left"
+"Mod+Ctrl+J" = "window-move-down"
+"Mod+Ctrl+K" = "window-move-up"
+"Mod+Ctrl+L" = "column-move-right"
+"Mod+Ctrl+Home" = "column-move-to-first"
+"Mod+Ctrl+End" = "column-move-to-last"
+"Mod+Shift+Ctrl+Left" = "column-move-to-output-left"
+"Mod+Shift+Ctrl+Right" = "column-move-to-output-right"
+"Mod+BracketLeft" = "window-consume-or-expel-left"
+"Mod+BracketRight" = "window-consume-or-expel-right"
+
+# Window state and layout
+"Mod+R" = "window-cycle-primary-extent"
+"Mod+Shift+R" = "window-cycle-primary-extent-back"
+"Mod+F" = { action = "window-toggle-maximize", repeat = false }
+"Mod+Shift+F" = { action = "window-toggle-fullscreen", repeat = false }
+"Mod+M" = { action = "window-toggle-maximize-to-edges", repeat = false }
+"Mod+C" = "column-center"
+"Mod+Minus" = "window-modify-primary-extent -0.1"
+"Mod+Equal" = "window-modify-primary-extent 0.1"
+"Mod+V" = { action = "window-toggle-floating", repeat = false }
+"Mod+Shift+V" = { action = "window-focus-switch-floating", repeat = false }
+"Mod+W" = { action = "column-toggle-tabbed", repeat = false }
+
+# Workspaces
+"Mod+Page_Down" = "workspace-next"
+"Mod+Page_Up" = "workspace-previous"
+"Mod+U" = "workspace-next"
+"Mod+I" = "workspace-previous"
+"Mod+Ctrl+Page_Down" = "column-move-to-workspace-next"
+"Mod+Ctrl+Page_Up" = "column-move-to-workspace-previous"
+"Mod+Ctrl+U" = "column-move-to-workspace-next"
+"Mod+Ctrl+I" = "column-move-to-workspace-previous"
+"Mod+1" = "workspace-switch 1"
+"Mod+2" = "workspace-switch 2"
+"Mod+3" = "workspace-switch 3"
+"Mod+4" = "workspace-switch 4"
+"Mod+5" = "workspace-switch 5"
+"Mod+6" = "workspace-switch 6"
+"Mod+7" = "workspace-switch 7"
+"Mod+8" = "workspace-switch 8"
+"Mod+9" = "workspace-switch 9"
+"Mod+Shift+1" = "column-move-to-workspace 1"
+"Mod+Shift+2" = "column-move-to-workspace 2"
+"Mod+Shift+3" = "column-move-to-workspace 3"
+"Mod+Shift+4" = "column-move-to-workspace 4"
+"Mod+Shift+5" = "column-move-to-workspace 5"
+"Mod+Shift+6" = "column-move-to-workspace 6"
+"Mod+Shift+7" = "column-move-to-workspace 7"
+"Mod+Shift+8" = "column-move-to-workspace 8"
+"Mod+Shift+9" = "column-move-to-workspace 9"
+
+# ==============================================================================
+# Layout
+# New scrolling-layout windows start at half the output width. Without this
+# setting, each application chooses its starting width. Stacked columns retain
+# their most recently focused row when focus leaves and later returns.
+# https://docs.noctalia.dev/umbriel/layout/
+[layout]
+# mode = "scrolling" # "scrolling", "dwindle", "master", or "stacking".
+extent_presets = [0.333, 0.5, 0.667]
+
+# What a tiled window's own maximize button does: "column" fills the column,
+# "edges" fills the usable area without struts, gaps, or borders. The
+# window-toggle-maximize action is unaffected.
+# client_maximize = "column"
+
+[layout.scrolling]
+default_extent_fraction = 0.5
+# Center the window picked in the overview, as column-center would.
+# center_on_overview_select = true
+
+# ==============================================================================
+# Window rules
+# Rules combine in order, with later values overriding earlier ones.
+# https://docs.noctalia.dev/umbriel/window-rules/
+
+# Blur windows over the cached wallpaper blur. Set blur_optimized = false to
+# include overlapping windows behind them, at a GPU cost on every frame that
+# moves anything behind them.
+# daru: every window a little see-through, over that blur
+[[window_rule]]
+opacity = 0.75
+blur = true
+
+# daru: but solid for reading and photos
+[[window_rule]]
+match.app_id = ["firefox$"]
+opacity = 1.0
+blur = false
+
+[[window_rule]]
+match.title = "^(Picture-in-Picture|Picture in picture)$"
+default_floating = true
+default_maximize = false
+default_position = { x = 20, y = 20, anchor = "bottom_right" }
+
+# Keep game menus inside their window; a focus or workspace keybind releases the pointer.
+# [[window_rule]]
+# match.app_id = "^steam_app_.*$"
+# confine_pointer = true
+
+# Keep compositor shortcuts available while a virtual machine window is focused.
+# [[window_rule]]
+# match.app_id = "^virt-manager$"
+# allow_shortcuts_inhibit = false
+
+# Leave an application that draws its own corners and shadow undecorated.
+# [[window_rule]]
+# match.app_id = "^org[.]gnome[.]TextEditor$"
+# border_width = 0
+# corner_radius = 0
+# shadow = false
+
+# ==============================================================================
+# Layer rules
+# https://docs.noctalia.dev/umbriel/layer-rules/
+#
+# daru: frosted glass behind its bar, dropdowns and wallpaper picker strip.
+# Its wallpaper is a layer too (amane-wallpaper), which is what the glass shows.
+[[layer_rule]]
+match.namespace = "^amane-(bar|panel|dock)$"
+blur = true
+blur_popups = true
+
+# The dropdowns and the wallpaper picker open over windows, so they blur the
+# live content behind them. The bar sits on the wallpaper and keeps the cached
+# wallpaper blur.
+[[layer_rule]]
+match.namespace = "^amane-(panel|dock)$"
+blur_optimized = false
+
+# ==============================================================================
+# Overview
+# Built-in overview and animation values are used.
+# Overview: https://docs.noctalia.dev/umbriel/workspaces-overview/
+# Animation: https://docs.noctalia.dev/umbriel/animation/
+#
+# daru: no hot corner; Mod+O and Alt+Tab open the overview
+# [hot_corners.top_left]
+# enabled = true
+# delay_ms = 500
+# action = "overview-open"
+
+# Window-rule opacity and blur fade on focus changes by default. Disable this
+# independently of border fades, or choose its own duration and curve.
+# [animation.windows_opacity]
+# enabled = true
+# curve = "spring:1,900"
+# duration_ms = 250 # For non-spring curves; a spring sets its own length.
