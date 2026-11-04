@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Two fake StatusNotifier items, to test the tray inside the nested session: dev/ctl.sh dev/fake_tray.py"""
+"""Two fake StatusNotifier items, to test the tray: dev/py.sh dev/fake_tray.py"""
 import os, sys, math, dbus, dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib

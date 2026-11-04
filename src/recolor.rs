@@ -79,7 +79,7 @@ fn wanted() -> Vec<App> {
 
 /// writes the current colours for every app that asked for them. the files are small, but this runs on a thread of
 /// its own all the same, after the shell has already recoloured itself. DARU_NO_RECOLOR turns it off, for a second
-/// shell that shares the home folder, like dev/nested.sh's
+/// shell that shares the home folder (a test copy in a nested compositor), so it doesn't overwrite the real one's files
 pub fn export() {
     if std::env::var_os("DARU_NO_RECOLOR").is_some_and(|value| !value.is_empty()) {
         return;

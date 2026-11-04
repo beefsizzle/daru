@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fake tray apps for testing the tray's robustness: one that never answers, one that sends a huge pixmap size.
-   dev/ctl.sh dev/fake_hang.py"""
+   dev/py.sh dev/fake_hang.py"""
 import os, time, dbus, dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A fake tray item with a dbusmenu that includes a hidden entry, to test menu rendering: dev/ctl.sh dev/fake_menu.py
+"""A fake tray item with a dbusmenu that includes a hidden entry, to test menu rendering: dev/py.sh dev/fake_menu.py
    MENU_DELAY=2 makes it answer slowly, like a busy app, to test menus that arrive late"""
 import os, time, dbus, dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
