@@ -23,6 +23,7 @@ mod netinfo;
 mod netpanel;
 mod panels;
 mod recolor;
+mod schemes;
 mod power;
 mod profiles;
 mod sound;
@@ -101,6 +102,7 @@ fn main() {
         .font(TEXT_FONT)
         .ipc("toggle", panels::ipc)
         .ipc("wallpaper", wallpaper::ipc)
+        .ipc("scheme", schemes::ipc)
         // `amane ipc call recolor` writes the colours for other apps again, after one was set up (greetd/install.sh)
         .ipc("recolor", |_| {
             recolor::export();

@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use amane::{Argument, Bus, Color, Service, Value};
 
-use crate::theme::{Theme, hex, mix, over, signal, theme, to_hsl};
+use crate::theme::{Theme, hex, mix, over, theme, to_hsl};
 
 /*
  * the wallpaper's colours for other apps, written whenever the shell's own colours change. each app reads its file
@@ -210,8 +210,6 @@ impl Colors {
     fn from(t: &Theme) -> Self {
         let background = Color::rgb(t.panel.red(), t.panel.green(), t.panel.blue());
 
-        let hue = |seed: Color| signal(seed, t.accent);
-
         Self {
             background,
             surface: over(t.surface, background),
@@ -224,15 +222,15 @@ impl Colors {
             on_accent: t.on_accent,
             red: t.red,
             yellow: t.yellow,
-            green: hue(Color::rgb(0x9e, 0xce, 0x6a)),
-            blue: hue(Color::rgb(0x7a, 0xa2, 0xf7)),
-            purple: hue(Color::rgb(0xbb, 0x9a, 0xf7)),
-            orange: hue(Color::rgb(0xff, 0x9e, 0x64)),
+            green: t.green,
+            blue: t.blue,
+            purple: t.purple,
+            orange: t.orange,
         }
     }
 }
 
-const HEADER: &str = "written by the daru shell from the wallpaper, and rewritten on every change";
+const HEADER: &str = "written by the daru shell from the wallpaper or the colour scheme picked, and rewritten on every change";
 
 /*
  * libadwaita 1.6 and later read the css variables, older GTK4 apps the named colours. GTK reads this file only when an

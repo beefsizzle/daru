@@ -2,7 +2,7 @@
 
 A desktop shell for [Umbriel](https://docs.noctalia.dev/umbriel/), built with [Amane](https://github.com/MystiaFin/amane).
 Bar, tray, dashboard, launcher, notifications, lock screen, wallpaper picker and the usual dropdowns, all coloured
-from the wallpaper.
+from the wallpaper, or from one of the colour schemes in the wallpaper picker.
 
 It's a personal shell, not a plug-and-play one: expect to read the source if you want to try it. 
 
@@ -29,8 +29,9 @@ amane compile
 amane run
 ```
 
-Panels open with `amane ipc call toggle <name>` (see `src/panels.rs`). Other apps can follow the wallpaper's colours
-too (see `src/recolor.rs`), and `greetd/` holds a login screen for greetd, with its own `install.sh`.
+Panels open with `amane ipc call toggle <name>` (see `src/panels.rs`). Other apps can follow the shell's colours
+too (see `src/recolor.rs`), and `amane ipc call scheme <name>|wallpaper` switches the colour scheme from a keybind
+(see `src/schemes.rs`). `greetd/` holds a login screen for greetd, with its own `install.sh`.
 
 `umbriel/config.toml` is an example Umbriel config for daru: Umbriel's own starting config with daru starting at
 login, its panels on the keybinds, and blur behind its bar and panels. Copy it to `~/.config/umbriel/config.toml`.

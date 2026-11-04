@@ -38,7 +38,7 @@ macro_rules! theme {
 
 theme! {
     background { glass, panel }
-    content { surface, surface_hi, border, fg, dim, faint, accent, accent_soft, on_accent, red, yellow }
+    content { surface, surface_hi, border, fg, dim, faint, accent, accent_soft, on_accent, red, yellow, green, blue, purple, orange }
 }
 
 impl Theme {
@@ -75,7 +75,12 @@ pub fn mix(a: Color, b: Color, t: f32) -> Color {
     )
 }
 
+/// the colours in use: a named scheme when one is picked (see schemes.rs), the wallpaper's otherwise
 pub fn theme() -> Theme {
+    crate::schemes::chosen().map_or_else(from_wallpaper, crate::schemes::Scheme::theme)
+}
+
+pub fn from_wallpaper() -> Theme {
     let palette = Palette::read();
 
     derive(palette.background(), palette.foreground(), palette.accent())
@@ -98,9 +103,16 @@ const SIGNAL: f32 = 0.70; // red and yellow
 // a hue is only kept when there's colour to keep: a grey has none, and its hue would turn it red
 const GREY: f32 = 0.08;
 
-// warnings start from these and lean a little toward the accent, so they belong to the wallpaper's colours
-const RED_SEED: Color = Color::rgb(0xf7, 0x76, 0x8e);
-const YELLOW_SEED: Color = Color::rgb(0xe0, 0xaf, 0x68);
+// the signal hues start from these (red, yellow, green, blue, purple, orange) and lean a little toward the accent, so
+// they belong to the wallpaper's colours
+pub const SEEDS: [Color; 6] = [
+    Color::rgb(0xf7, 0x76, 0x8e),
+    Color::rgb(0xe0, 0xaf, 0x68),
+    Color::rgb(0x9e, 0xce, 0x6a),
+    Color::rgb(0x7a, 0xa2, 0xf7),
+    Color::rgb(0xbb, 0x9a, 0xf7),
+    Color::rgb(0xff, 0x9e, 0x64),
+];
 
 pub fn derive(background: Color, foreground: Color, accent: Color) -> Theme {
     let base = |lightness: f32| relit(background, lightness, 0.0, 0.35);
@@ -108,7 +120,7 @@ pub fn derive(background: Color, foreground: Color, accent: Color) -> Theme {
     let fg = relit(foreground, TEXT, 0.0, 0.12);
     let accent_color = relit(accent, ACCENT, 0.45, 0.82);
 
-    let signal = |seed: Color| signal(seed, accent_color);
+    let [red, yellow, green, blue, purple, orange] = SEEDS.map(|seed| signal(seed, accent_color));
 
     Theme {
         glass: alpha(base(BACKGROUND), 0.62),
@@ -122,8 +134,12 @@ pub fn derive(background: Color, foreground: Color, accent: Color) -> Theme {
         accent: accent_color,
         accent_soft: alpha(accent_color, 0.22),
         on_accent: relit(accent, ON_ACCENT, 0.0, 0.50),
-        red: signal(RED_SEED),
-        yellow: signal(YELLOW_SEED),
+        red,
+        yellow,
+        green,
+        blue,
+        purple,
+        orange,
     }
 }
 
@@ -199,11 +215,11 @@ fn from_hsl(hue: f32, saturation: f32, lightness: f32) -> Color {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::{BACKGROUND, Color, derive, from_hsl, to_hsl};
 
     // WCAG contrast between two opaque colours
-    fn contrast(a: Color, b: Color) -> f32 {
+    pub fn contrast(a: Color, b: Color) -> f32 {
         let luminance = |color: Color| {
             let linear = |channel: u8| {
                 let value = f32::from(channel) / 255.0;

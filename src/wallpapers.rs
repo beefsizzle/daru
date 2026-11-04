@@ -1,25 +1,36 @@
 use std::collections::HashMap;
 
 use amane::{
-    Center, Column, Full, Key, Keyboard, Layer, LayerWindow, Monitor, Parent, Rectangle, Row, Service, Vertical, Widget, Zone, children,
+    Center, Color, Column, Full, Key, Keyboard, Layer, LayerWindow, Margin, Monitor, Parent, Rectangle, Row, Service, SpaceBetween,
+    Start, Vertical, Widget, Zone, children,
 };
 
 use crate::panels::{self, Which};
-use crate::theme::{alpha};
-use crate::ui::{Wheel, bold, hover, icon, label, set_hover};
+use crate::schemes::{self, SCHEMES};
+use crate::theme::{self, Theme, alpha};
+use crate::ui::{Wheel, bold, hover, label, section, set_hover};
 use crate::wallpaper::Wallpaper;
 
 /*
- * the wallpaper picker: a strip at the bottom of the screen with a thumbnail per image.
- * thumbnails are made once with ImageMagick, because decoding a few dozen 4K pngs
- * every time the picker opens would stall the shell.
+ * the wallpaper picker: a panel at the bottom of the screen with a thumbnail per image, and under it the colour
+ * schemes that can replace the wallpaper's colours (see schemes.rs). thumbnails are made once with ImageMagick,
+ * because decoding a few dozen 4K pngs every time the picker opens would stall the shell.
  */
 pub struct Wallpapers {
     pub files: Vec<String>,
     // wallpaper -> its finished thumbnail. checked once here, so drawing the strip touches no files
     pub ready: HashMap<String, String>,
     pub selected: usize,
-    wheel: Wheel,  // moves the selection
+    pub scheme: usize, // the scheme chosen in the picker: 0 for the wallpaper's colours, then `SCHEMES` in order
+    pub focus: Focus,  // which row the keys move
+    wheel: Wheel,      // moves the selection
+    scheme_wheel: Wheel,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    Wallpapers,
+    Schemes,
 }
 
 const THUMB_WIDTH: u32 = 480;
@@ -307,7 +318,7 @@ impl Service for Wallpapers {
 
         let ready = files.iter().filter_map(|path| Some((path.clone(), thumbnail_if_ready(path)?))).collect();
 
-        Self { files, ready, selected: 0, wheel: Wheel::new() }
+        Self { files, ready, selected: 0, scheme: 0, focus: Focus::Wallpapers, wheel: Wheel::new(), scheme_wheel: Wheel::new() }
     }
 
     // thumbnails and screen-sized copies are made in the background, one image at a time, at low priority.
@@ -353,11 +364,36 @@ impl Service for Wallpapers {
 }
 
 impl Wallpapers {
-    /// start on the wallpaper that's showing now
+    /// start on the wallpaper that's showing now and the colours in use
     pub fn select_current(&mut self) {
         let current = Wallpaper::read().path.clone();
 
         self.selected = self.files.iter().position(|path| *path == current).unwrap_or(0);
+
+        self.scheme = schemes::chosen().and_then(|chosen| SCHEMES.iter().position(|scheme| scheme.name == chosen.name)).map_or(0, |index| index + 1);
+
+        self.focus = Focus::Wallpapers;
+    }
+
+    fn scroll_schemes(&mut self, amount: f32) {
+        let steps = self.scheme_wheel.steps(amount);
+
+        if steps != 0 {
+            self.step_scheme(steps as isize);
+        }
+    }
+
+    // the schemes are a list with two ends, not a loop like the wallpapers
+    fn step_scheme(&mut self, by: isize) {
+        self.scheme = (self.scheme as isize).saturating_add(by).clamp(0, SCHEMES.len() as isize) as usize;
+    }
+
+    fn step_focused(&mut self, by: isize) {
+        match self.focus {
+            Focus::Wallpapers if by.abs() > self.files.len() as isize => self.selected = if by < 0 { 0 } else { self.files.len().saturating_sub(1) },
+            Focus::Wallpapers => self.step(by),
+            Focus::Schemes => self.step_scheme(by),
+        }
     }
 
     /// the wheel moves one wallpaper per notch, down or right goes forward
@@ -382,182 +418,308 @@ impl Wallpapers {
 
 // ---------------------------------------------------------------- view
 
-const BIG: (f32, f32) = (336.0, 189.0);
-const SMALL: (f32, f32) = (200.0, 112.5);
-const VISIBLE: isize = 3; // thumbnails on each side of the selected one
-const HEIGHT: f32 = 300.0;
+const PAD: f32 = 18.0;
+const HEADER: f32 = 16.0;
+
+// every thumbnail is the same size, the selected one is framed
+const THUMB: (f32, f32) = (224.0, 126.0);
+const THUMB_GAP: f32 = 10.0;
+
+// the colour schemes, each drawn in its own colours
+const SWATCH: (f32, f32) = (144.0, 56.0);
+const SWATCH_GAP: f32 = 8.0;
+
+// the selection's border, 2 wide, sits this far out from what it frames
+const FRAME: f32 = 5.0;
+
+// the bar along the bottom of the wallpaper and the scheme in use
+const IN_USE: f32 = 3.0;
+
+const HEIGHT: f32 =
+    PAD + HEADER + 12.0 + THUMB.1 + 2.0 * FRAME + 18.0 + 1.0 + 18.0 + HEADER + 12.0 + SWATCH.1 + 2.0 * FRAME + PAD;
 
 fn pick(path: String) {
     crate::wallpaper::apply(&path);
 }
 
+// 0 is the wallpaper's own colours, then the schemes in order
+fn pick_scheme(index: usize) {
+    schemes::choose(index.checked_sub(1).and_then(|index| SCHEMES.get(index)));
+}
+
 fn on_key(key: Key) {
+    let focus = Wallpapers::read().focus;
+
     match key {
         Key::Escape => panels::close(),
-        Key::Left | Key::Character('h') => Wallpapers::write().step(-1),
-        Key::Right | Key::Character('l') => Wallpapers::write().step(1),
-        Key::Home => Wallpapers::write().selected = 0,
-        Key::End => {
+        Key::Up | Key::Character('k') => Wallpapers::write().focus = Focus::Wallpapers,
+        Key::Down | Key::Character('j') => Wallpapers::write().focus = Focus::Schemes,
+        Key::Tab => {
             let mut wallpapers = Wallpapers::write();
 
-            wallpapers.selected = wallpapers.files.len().saturating_sub(1);
+            wallpapers.focus = if focus == Focus::Wallpapers { Focus::Schemes } else { Focus::Wallpapers };
         }
+        Key::Left | Key::Character('h') => Wallpapers::write().step_focused(-1),
+        Key::Right | Key::Character('l') => Wallpapers::write().step_focused(1),
+        Key::Home => Wallpapers::write().step_focused(isize::MIN / 2),
+        Key::End => Wallpapers::write().step_focused(isize::MAX / 2),
         Key::Enter | Key::Space => {
-            let path = {
+            let (path, scheme) = {
                 let wallpapers = Wallpapers::read();
 
-                wallpapers.files.get(wallpapers.selected).cloned()
+                (wallpapers.files.get(wallpapers.selected).cloned(), wallpapers.scheme)
             };
 
-            if let Some(path) = path {
-                pick(path);
+            match focus {
+                Focus::Wallpapers => {
+                    if let Some(path) = path {
+                        pick(path);
+                    }
+                }
+                Focus::Schemes => pick_scheme(scheme),
             }
         }
         _ => {}
     }
 }
 
-pub fn view(monitor: &Monitor) -> LayerWindow {
-    let wallpapers = Wallpapers::read();
+// how far the panel has faded in, for colours that don't come from its own theme
+fn shown(t: &Theme) -> f32 {
+    f32::from(t.fg.alpha()) / 255.0
+}
 
-    // reading the service above is what starts its thumbnail work at launch, so it stays. but a closed picker shouldn't
-    // build seven tiles (and look at seven files) on every change
-    let Some(t) = panels::look(Which::Wallpapers, monitor) else {
-        return panels::hidden("amane-dock");
-    };
-    let current = Wallpaper::read().path.clone();
+// a colour at `amount` of its own opacity
+fn faded(color: Color, amount: f32) -> Color {
+    alpha(color, f32::from(color.alpha()) / 255.0 * amount)
+}
 
-    let window = LayerWindow::new()
-        .width(Full)
-        .height(HEIGHT)
-        .anchor_vertical(Vertical::Bottom)
-        .layer(Layer::Overlay)
-        .space(Zone::Ignore)
-        .namespace("amane-dock")
-        .keyboard(Keyboard::Exclusive)
-        .on_key(on_key);
+/// draws a 2 wide border around something selected: the accent in the row the keys move, faint in the other
+fn framed(t: &Theme, selected: bool, focused: bool, content: Rectangle, size: (f32, f32)) -> Rectangle {
+    let color = if focused { t.accent } else { faded(alpha(t.fg, 0.28), shown(t)) };
+
+    Rectangle::new()
+        .width(size.0 + 2.0 * FRAME)
+        .height(size.1 + 2.0 * FRAME)
+        .border(if selected { 2.0 } else { 0.0 }, color)
+        .align_child(Center, Center)
+        .cursor(amane::Pointer)
+        .child(content)
+}
+
+// the row's name, in the accent while the keys move it, then what's chosen in it
+fn header(t: &Theme, name: &str, focused: bool, chosen: String, extra: Option<String>) -> Row {
+    let mut items: Vec<Box<dyn Widget>> = vec![
+        Box::new(section(name, t).color(if focused { t.accent } else { t.faint })),
+        Box::new(bold(chosen, 12.5, t.fg)),
+    ];
+
+    if let Some(extra) = extra {
+        items.push(Box::new(label(extra, 12.0, t.faint)));
+    }
+
+    Row::new(items).gap(12.0).align(Center).height(HEADER)
+}
+
+fn strip(t: &Theme, wallpapers: &Wallpapers, current: &str, width: f32) -> Rectangle {
+    let area = Rectangle::new()
+        .width(width)
+        .height(THUMB.1 + 2.0 * FRAME)
+        .align_child(Center, Center)
+        .on_scroll(|scroll| Wallpapers::write().scroll(if scroll.y.abs() >= scroll.x.abs() { scroll.y } else { scroll.x }));
 
     let count = wallpapers.files.len() as isize;
 
     if count == 0 {
-        return window.child(
-            panels::body(&t).align_child(Center, Center).child(label("No wallpapers found in ~/Pictures/Wallpapers", 13.0, t.dim)),
-        );
+        return area.child(label(format!("No wallpapers found in {}", directory()), 13.0, t.dim));
     }
 
+    // as many as fit, an odd number so the selected one is in the middle
+    let fit = ((width + THUMB_GAP) / (THUMB.0 + 2.0 * FRAME + THUMB_GAP)).floor() as isize;
+    let side = ((fit - 1) / 2).max(0);
+
     let selected = wallpapers.selected as isize;
+    let focused = wallpapers.focus == Focus::Wallpapers;
 
     let mut items: Vec<Box<dyn Widget>> = Vec::new();
 
-    for offset in -VISIBLE..=VISIBLE {
+    for offset in -side..=side {
         // wraps around, so the strip never runs out
         let index = (selected + offset).rem_euclid(count) as usize;
 
         // with few images, don't show the same one twice
-        if count < VISIBLE * 2 + 1 && (selected + offset < 0 || selected + offset >= count) {
+        if count < side * 2 + 1 && (selected + offset < 0 || selected + offset >= count) {
             continue;
         }
 
         let path = wallpapers.files[index].clone();
 
-        let (width, height) = if offset == 0 { BIG } else { SMALL };
-
         let key = format!("wp{index}");
         let hot = hover(&key);
 
-        let is_current = path == current;
-
         // a plain tile until the thumbnail has been made
-        let tile = Rectangle::new().width(width).height(height);
+        let tile = Rectangle::new().width(THUMB.0).height(THUMB.1);
 
         let tile = match wallpapers.ready.get(&path) {
             Some(thumbnail) => tile.fill(amane::Image::cover(thumbnail)),
             None => tile.fill(t.surface_hi),
         };
 
-        // the side tiles are dimmed by a veil of the panel's colour rather than with `Rectangle::opacity`, which Amane
-        // draws on a window-sized texture of its own. the panel's colour at 38% over the picture looks about the same
-        // as the picture at 62% over the panel
-        let veil = if offset == 0 { 0.0 } else { 0.38 * (1.0 - hot) };
+        // the others are dimmed by a veil of the panel's colour rather than with `Rectangle::opacity`, which Amane
+        // draws on a window-sized texture of its own
+        let veil = if offset == 0 { 0.0 } else { 0.45 * (1.0 - hot) };
 
-        let tile = if veil > 0.0 {
-            tile.child(Rectangle::new().width(Parent).height(Parent).fill(alpha(t.panel, veil)))
-        } else {
-            tile
-        };
+        let marker = Rectangle::new().width(Parent).height(IN_USE).fill(if path == *current { t.accent } else { Color::TRANSPARENT });
 
-        let tile = tile.cursor(amane::Pointer);
-
-        let border = if offset == 0 { t.accent } else { alpha(t.fg, 0.0) };
+        let tile = tile
+            .align_child(Center, amane::End)
+            .child(Rectangle::new().width(Parent).height(Parent).fill(alpha(t.panel, veil)).align_child(Center, amane::End).child(marker));
 
         let target = path.clone();
 
-        let framed = Rectangle::new()
-            .width(width + 8.0)
-            .height(height + 8.0)
-            .border(if offset == 0 { 2.0 } else { 0.0 }, border)
-            .padding(4.0)
-            .align_child(Center, Center)
-            .cursor(amane::Pointer)
-            .on_hover(move |inside| set_hover(&key, inside))
-            .on_click(move |_| {
-                Wallpapers::write().selected = index;
+        items.push(Box::new(
+            framed(t, offset == 0, focused, tile, THUMB).on_hover(move |inside| set_hover(&key, inside)).on_click(move |_| {
+                {
+                    let mut wallpapers = Wallpapers::write();
+
+                    wallpapers.selected = index;
+                    wallpapers.focus = Focus::Wallpapers;
+                }
 
                 pick(target.clone());
-            })
-            .child(tile);
-
-        // a small tag on the wallpaper that is showing now
-        let tagged: Box<dyn Widget> = if is_current {
-            Box::new(
-                amane::Stack::new(children![
-                    framed,
-                    Rectangle::new()
-                        .width(22.0)
-                        .height(22.0)
-                        .fill(t.accent)
-                        .align_child(Center, Center)
-                        .translate(width + 8.0 - 26.0, 4.0)
-                        .child(icon("\u{f00c}", 11.0, t.on_accent)),
-                ]),
-            )
-        } else {
-            Box::new(framed)
-        };
-
-        items.push(tagged);
+            }),
+        ));
     }
 
-    let name = wallpapers.files[wallpapers.selected]
-        .rsplit('/')
-        .next()
-        .unwrap_or("")
-        .rsplit_once('.')
-        .map_or_else(String::new, |(stem, _)| stem.to_string());
+    area.child(Row::new(items).gap(THUMB_GAP).align(Center))
+}
 
-    let strip = Row::new(items).gap(14.0).align(Center).justify(Center).width(Parent).height(BIG.1 + 16.0);
+// one scheme, drawn in its own colours: its name over its accent and signal colours
+fn swatch(t: &Theme, index: usize, name: &str, colors: &Theme, in_use: bool, selected: bool, focused: bool) -> Rectangle {
+    let key = format!("sc{index}");
+    let hot = hover(&key);
 
-    let caption = Row::new(children![
-        bold(name, 13.0, t.fg),
-        label(format!("{} / {}", wallpapers.selected + 1, count), 12.0, t.faint),
-        label("\u{2190} \u{2192} choose     enter apply     esc close", 11.5, t.faint),
+    let amount = shown(t);
+
+    let background = Color::rgb(colors.panel.red(), colors.panel.green(), colors.panel.blue());
+
+    let dots: Vec<Box<dyn Widget>> = [colors.accent, colors.red, colors.yellow, colors.green, colors.blue]
+        .into_iter()
+        .map(|color| Box::new(Rectangle::new().width(10.0).height(10.0).fill(faded(color, amount))) as Box<dyn Widget>)
+        .collect();
+
+    let content = Rectangle::new()
+        .width(SWATCH.0)
+        .height(SWATCH.1 - IN_USE)
+        .padding(10.0)
+        .align_child(Start, Center)
+        .child(Column::new(children![label(name, 12.0, faded(colors.fg, amount)), Row::new(dots).gap(4.0)]).gap(8.0));
+
+    let marker = Rectangle::new().width(SWATCH.0).height(IN_USE).fill(if in_use { faded(colors.accent, amount) } else { Color::TRANSPARENT });
+
+    let chip = Rectangle::new()
+        .width(SWATCH.0)
+        .height(SWATCH.1)
+        .fill(faded(background, amount))
+        .border(1.0, faded(alpha(colors.fg, 0.10 + 0.25 * hot), amount))
+        .child(Column::new(children![content, marker]));
+
+    framed(t, selected, focused, chip, SWATCH).on_hover(move |inside| set_hover(&key, inside)).on_click(move |_| {
+        {
+            let mut wallpapers = Wallpapers::write();
+
+            wallpapers.scheme = index;
+            wallpapers.focus = Focus::Schemes;
+        }
+
+        pick_scheme(index);
+    })
+}
+
+fn swatches(t: &Theme, wallpapers: &Wallpapers, width: f32) -> Rectangle {
+    let total = SCHEMES.len() + 1;
+
+    // as many as fit, sliding along so the selected one is always among them
+    let fit = (((width + SWATCH_GAP) / (SWATCH.0 + 2.0 * FRAME + SWATCH_GAP)).floor() as usize).clamp(1, total);
+    let first = wallpapers.scheme.saturating_sub(fit / 2).min(total - fit);
+
+    let in_use = schemes::chosen().map_or(0, |chosen| SCHEMES.iter().position(|scheme| scheme.name == chosen.name).map_or(0, |index| index + 1));
+    let focused = wallpapers.focus == Focus::Schemes;
+
+    let mut items: Vec<Box<dyn Widget>> = Vec::new();
+
+    for index in first..first + fit {
+        let (name, colors) = match index.checked_sub(1).and_then(|index| SCHEMES.get(index)) {
+            Some(scheme) => (scheme.name, scheme.theme()),
+            None => ("Wallpaper", theme::from_wallpaper()),
+        };
+
+        items.push(Box::new(swatch(t, index, name, &colors, index == in_use, index == wallpapers.scheme, focused)));
+    }
+
+    Rectangle::new()
+        .width(width)
+        .height(SWATCH.1 + 2.0 * FRAME)
+        .align_child(Center, Center)
+        .on_scroll(|scroll| Wallpapers::write().scroll_schemes(if scroll.y.abs() >= scroll.x.abs() { scroll.y } else { scroll.x }))
+        .child(Row::new(items).gap(SWATCH_GAP).align(Center))
+}
+
+pub fn view(monitor: &Monitor) -> LayerWindow {
+    let wallpapers = Wallpapers::read();
+
+    // reading the service above is what starts its thumbnail work at launch, so it stays. but a closed picker shouldn't
+    // build its tiles (and look at their files) on every change
+    let Some(t) = panels::look(Which::Wallpapers, monitor) else {
+        return panels::hidden("amane-dock");
+    };
+
+    let current = Wallpaper::read().path.clone();
+
+    let width = monitor.width as f32 - 2.0 * panels::GAP as f32 - 2.0 * PAD;
+
+    let window = LayerWindow::new()
+        .width(Full)
+        .height(HEIGHT)
+        .anchor_vertical(Vertical::Bottom)
+        .margin(Margin { top: 0, right: panels::GAP, bottom: panels::GAP, left: panels::GAP })
+        .layer(Layer::Overlay)
+        .space(Zone::Ignore)
+        .namespace("amane-dock")
+        .keyboard(Keyboard::Exclusive)
+        .on_key(on_key);
+
+    let count = wallpapers.files.len();
+
+    let name = wallpapers
+        .files
+        .get(wallpapers.selected)
+        .and_then(|path| path.rsplit('/').next())
+        .map(|file| file.rsplit_once('.').map_or(file, |(stem, _)| stem).to_string())
+        .unwrap_or_default();
+
+    let scheme_name = wallpapers.scheme.checked_sub(1).and_then(|index| SCHEMES.get(index)).map_or("Wallpaper", |scheme| scheme.name);
+
+    let top = Row::new(children![
+        header(&t, "Wallpaper", wallpapers.focus == Focus::Wallpapers, name, (count > 0).then(|| format!("{} / {count}", wallpapers.selected + 1))),
+        label("\u{2190} \u{2192} choose     \u{2191} \u{2193} wallpaper or colours     enter apply     esc close", 11.5, t.faint),
     ])
-    .gap(18.0)
-    .align(Center);
+    .justify(SpaceBetween)
+    .align(Center)
+    .width(width);
 
-    let content = Column::new(children![strip, caption]).gap(14.0).align(Center);
+    let content = Column::new(children![
+        top,
+        Rectangle::new().width(width).height(12.0),
+        strip(&t, &wallpapers, &current, width),
+        Rectangle::new().width(width).height(18.0),
+        Rectangle::new().width(width).height(1.0).fill(t.border),
+        Rectangle::new().width(width).height(18.0),
+        header(&t, "Colours", wallpapers.focus == Focus::Schemes, scheme_name.to_string(), None),
+        Rectangle::new().width(width).height(12.0),
+        swatches(&t, &wallpapers, width),
+    ]);
 
-    window.child(
-        Rectangle::new()
-            .width(Parent)
-            .height(Parent)
-            // the bar's glass rather than a panel's background: the strip is mostly pictures, not text to read, and
-            // sits as see-through as the bar and the windows around it
-            .fill(t.glass)
-            .align_child(Center, Center)
-            .on_scroll(|scroll| Wallpapers::write().scroll(if scroll.y.abs() >= scroll.x.abs() { scroll.y } else { scroll.x }))
-            .child(content),
-    )
+    window.child(panels::body(&t).padding(PAD).align_child(Start, Start).child(content))
 }
 
 #[cfg(test)]
