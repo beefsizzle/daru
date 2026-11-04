@@ -35,6 +35,7 @@ too (see `src/recolor.rs`), and `greetd/` holds a login screen for greetd, with 
 `umbriel/config.toml` is an example Umbriel config for daru: Umbriel's own starting config with daru starting at
 login, its panels on the keybinds, and blur behind its bar and panels. Copy it to `~/.config/umbriel/config.toml`.
 
+## LLM usage
 Daru is written with the help of Claude through Claude Code. Much of the code comes from those sessions. Every change is still built, reviewed and used every day on both an intel/nvidia laptop and a full AMD desktop before it ships.
 
 ## License
