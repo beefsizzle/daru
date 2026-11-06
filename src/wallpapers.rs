@@ -375,10 +375,12 @@ impl Wallpapers {
         self.focus = Focus::Wallpapers;
     }
 
+    // scrolling a row makes it the one the keys move, or enter would apply what's selected in the other row
     fn scroll_schemes(&mut self, amount: f32) {
         let steps = self.scheme_wheel.steps(amount);
 
         if steps != 0 {
+            self.focus = Focus::Schemes;
             self.step_scheme(steps as isize);
         }
     }
@@ -401,6 +403,7 @@ impl Wallpapers {
         let steps = self.wheel.steps(amount);
 
         if steps != 0 {
+            self.focus = Focus::Wallpapers;
             self.step(steps as isize);
         }
     }
@@ -724,7 +727,44 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_size;
+    use super::{Focus, Wallpapers, decode_size};
+    use crate::ui::Wheel;
+
+    fn picker(focus: Focus) -> Wallpapers {
+        Wallpapers {
+            files: vec![String::from("a.png"), String::from("b.png")],
+            ready: std::collections::HashMap::new(),
+            selected: 0,
+            scheme: 0,
+            focus,
+            wheel: Wheel::new(),
+            scheme_wheel: Wheel::new(),
+        }
+    }
+
+    #[test]
+    fn scrolling_a_row_makes_it_the_one_enter_applies() {
+        let mut wallpapers = picker(Focus::Wallpapers);
+
+        wallpapers.scroll_schemes(1.0);
+
+        assert!(wallpapers.focus == Focus::Schemes);
+        assert_eq!(wallpapers.scheme, 1);
+
+        wallpapers.scroll(1.0);
+
+        assert!(wallpapers.focus == Focus::Wallpapers);
+        assert_eq!(wallpapers.selected, 1);
+    }
+
+    #[test]
+    fn a_scroll_too_small_for_a_notch_leaves_the_row_alone() {
+        let mut wallpapers = picker(Focus::Wallpapers);
+
+        wallpapers.scroll_schemes(0.4);
+
+        assert!(wallpapers.focus == Focus::Wallpapers);
+    }
 
     // the size ImageMagick decodes at when asked for `size`: the eighth below it, as jpeg:size does
     fn decoded(width: u32, height: u32, size: (u32, u32)) -> (u32, u32) {

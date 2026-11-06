@@ -7,10 +7,10 @@ use amane::{Argument, Bus, Color, Service, Value};
 use crate::theme::{Theme, hex, mix, over, theme, to_hsl};
 
 /*
- * the wallpaper's colours for other apps, written whenever the shell's own colours change. each app reads its file
- * from its own config, so it has to be pointed at it once (the line to add is under each one). the shell only ever
- * writes its own files and never edits an app's config. which apps get a file is up to ~/.config/amane-shell/recolor,
- * one name per line:
+ * the shell's colours for other apps, from the wallpaper or the colour scheme picked, written whenever they change.
+ * each app reads its file from its own config, so it has to be pointed at it once (the line to add is under each one).
+ * the shell only ever writes its own files and never edits an app's config. which apps get a file is up to
+ * ~/.config/amane-shell/recolor, one name per line:
  *
  *     gtk       ~/.config/gtk-4.0/daru.css, for GTK4 and libadwaita apps when they next start, and GNOME's accent
  *               setting, which libadwaita apps follow at once, even ones already open. `@import url("daru.css");` in
