@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/4ad7ae44-b271-4ada-8535-0eeb0b0ae38e
 ## Running it
 
 It needs the Amane CLI from [this fork](https://github.com/beefsizzle/amane), and uses ImageMagick, wl-clipboard,
-cliphist, `pactl`, NetworkManager, BlueZ, curl, jq, grim and slurp.
+cliphist, `pactl`, NetworkManager, BlueZ, curl, jq and grim.
 
 ```sh
 git clone https://github.com/beefsizzle/amane

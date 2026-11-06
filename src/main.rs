@@ -200,8 +200,9 @@ fn main() {
         .window_per_monitor(notify::toast_0)
         .window_per_monitor(notify::toast_1)
         .window_per_monitor(notify::toast_2)
-        // last, so a frozen screen covers the shell's other overlays too; slurp still opens above it
+        // last, so a frozen screen covers the shell's other overlays too, with the selection above it
         .window_per_monitor(freeze::view)
+        .window_per_monitor(freeze::selection)
         .run();
 }
 
