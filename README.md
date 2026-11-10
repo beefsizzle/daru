@@ -1,7 +1,8 @@
 # daru
 
 A desktop shell for [Umbriel](https://docs.noctalia.dev/umbriel/), built with [Amane](https://github.com/MystiaFin/amane).
-Bar, tray, dashboard, launcher, notifications, lock screen, wallpaper picker, screenshot tool and the usual dropdowns,
+Bar, tray, dashboard, launcher, notifications, lock screen (also when you step away), wallpaper picker, screenshot tool
+and the usual dropdowns,
 all coloured from the wallpaper, or from one of the colour schemes in the wallpaper picker.
 
 It's a personal shell, not a plug-and-play one: expect to read the source if you want to try it. 

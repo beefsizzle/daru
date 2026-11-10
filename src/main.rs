@@ -13,6 +13,7 @@ mod events;
 mod focus;
 mod freeze;
 mod icons;
+mod idle;
 mod launcher;
 mod layouts;
 mod lockscreen;
@@ -100,6 +101,8 @@ fn main() {
 
     App::new()
         .font(TEXT_FONT)
+        .idle(idle::LOCK, amane::Lock::start, || {})
+        .idle(idle::SCREENS_OFF, idle::screens_off, idle::screens_on)
         .ipc("toggle", panels::ipc)
         .ipc("wallpaper", wallpaper::ipc)
         .ipc("scheme", schemes::ipc)
