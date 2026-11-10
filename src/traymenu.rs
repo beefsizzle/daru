@@ -1,38 +1,38 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use amane::{
-    Argument, Bus, Center, Column, Horizontal, Layer, LayerWindow, Margin, Monitor, Parent, Rectangle, Row, ScrollArea, Service, Start,
-    Vertical, Widget, Zone, children,
+    Argument, Bus, Center, Column, Horizontal, Layer, LayerWindow, Margin, Monitor, Padding, Parent, Pointer, Rectangle, Row, ScrollArea,
+    Service, Start, Value, Vertical, Widget, Zone, children,
 };
 
 use crate::panels::{self, GAP, Which};
-use crate::theme::{Theme, alpha, mix};
+use crate::theme::{RADIUS_SMALL, Theme, alpha, mix};
 use crate::tray::TrayItem;
 use crate::ui::{bold, hover, icon, label, set_hover};
 
 /*
- * the popup menu of a tray icon. apps describe their menu over the dbusmenu protocol
- * (a tree of items), and the shell is expected to draw it.
+ * the popup menu of a tray icon. apps describe their menu over dbusmenu, as a tree of entries, and the shell draws it.
+ * it's read when it opens, since many apps only fill it in then
  */
 const MENU: &str = "com.canonical.dbusmenu";
 
 #[derive(Clone, Default)]
-pub struct Node {
-    pub id: i32,
-    pub label: String,
-    pub enabled: bool,
-    pub separator: bool,
-    pub visible: bool, // apps hide entries with `visible: false`
-    pub checked: Option<bool>, // Some for checkmark and radio items
-    pub children: Vec<Node>,
-    pub submenu: bool,
+struct Node {
+    id: i32,
+    label: String,
+    enabled: bool,
+    separator: bool,
+    visible: bool,         // apps hide entries with `visible: false`
+    checked: Option<bool>, // Some for checkmark and radio entries
+    children: Vec<Node>,
+    submenu: bool,
 }
 
 #[derive(Default)]
-pub struct TrayMenu {
-    pub root: Option<Node>,
-    pub stack: Vec<i32>, // the submenus we've walked into
+struct TrayMenu {
+    root: Option<Node>,
+    stack: Vec<i32>, // the submenus walked into
     destination: String,
     path: String,
 }
@@ -42,20 +42,19 @@ impl Service for TrayMenu {
         Self::default()
     }
 
-    fn interval() -> Duration {
-        Duration::from_secs(3600)
-    }
+    // it only changes when a menu is opened or clicked
+    fn listen() {}
 }
 
-fn parse(value: &amane::Value) -> Node {
+fn parse(value: &Value) -> Node {
     let fields = value.list();
 
-    let props = fields.get(1).cloned().unwrap_or(amane::Value::Nothing);
+    let props = fields.get(1).cloned().unwrap_or(Value::Nothing);
 
     let text = |key: &str| props.get(key).text().to_string();
 
     let flag = |key: &str, default: bool| match props.get(key) {
-        amane::Value::Bool(value) => *value,
+        Value::Bool(value) => *value,
         _ => default,
     };
 
@@ -92,10 +91,11 @@ fn fetch(destination: &str, path: &str) -> Option<Node> {
     Some(parse(layout))
 }
 
-// counts right clicks, so only the menu of the latest one is shown
+// counts menus asked for, so only the latest one is shown
 static REQUEST: AtomicU64 = AtomicU64::new(0);
 
-/// right click on a tray icon. returns false when the app has no menu, so the caller can ask the app to draw it
+/// opens a tray icon's menu, from a right click or a left click on an item that's only a menu. false when the app has
+/// no dbusmenu, so the caller can ask the app to draw its own
 pub fn open(item: &TrayItem, monitor: &str) -> bool {
     if item.menu.is_empty() {
         return false;
@@ -163,7 +163,7 @@ fn click(node: &Node) {
             (menu.destination.clone(), menu.path.clone())
         };
 
-        // refresh, apps may build a submenu lazily
+        // read again, since apps may only fill a submenu as it opens
         std::thread::spawn(move || {
             Bus::session().call(&destination, &path, MENU, "AboutToShow", &[Argument::Int(id)]);
 
@@ -184,7 +184,7 @@ fn click(node: &Node) {
     let id = node.id;
 
     std::thread::spawn(move || {
-        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_secs() as u32);
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |time| time.as_secs() as u32);
 
         Bus::session().call(
             &destination,
@@ -208,9 +208,15 @@ const WIDTH: f32 = 320.0;
 const ROW: f32 = 30.0;
 const MAX_LIST: f32 = 440.0;
 
+// a row's width inside the panel's padding, and its label's: less the row's own padding, the tick, the arrow and the gaps
+const ROW_WIDTH: f32 = WIDTH - 28.0;
+const LABEL_WIDTH: f32 = ROW_WIDTH - 20.0 - 14.0 - 14.0 - 16.0;
+
 fn row(t: &Theme, node: &Node) -> Box<dyn Widget> {
     if node.separator {
-        return Box::new(Rectangle::new().width(WIDTH - 28.0).height(9.0).align_child(Center, Center).child(Rectangle::new().width(WIDTH - 40.0).height(1.0).fill(t.border)));
+        let line = Rectangle::new().width(WIDTH - 40.0).height(1.0).fill(t.border);
+
+        return Box::new(Rectangle::new().width(ROW_WIDTH).height(9.0).align_child(Center, Center).child(line));
     }
 
     let key = format!("tm{}", node.id);
@@ -218,6 +224,7 @@ fn row(t: &Theme, node: &Node) -> Box<dyn Widget> {
 
     let color = if node.enabled { t.fg } else { t.faint };
 
+    // an empty tick keeps every label lined up
     let lead = match node.checked {
         Some(true) => icon("\u{f00c}", 11.0, t.accent),
         _ => icon("", 11.0, t.accent),
@@ -229,19 +236,19 @@ fn row(t: &Theme, node: &Node) -> Box<dyn Widget> {
 
     Box::new(
         Rectangle::new()
-            .width(WIDTH - 28.0)
+            .width(ROW_WIDTH)
             .height(ROW)
-            .radius(crate::theme::RADIUS_SMALL)
+            .radius(RADIUS_SMALL)
             .fill(mix(alpha(t.surface, 0.0), t.surface_hi, hot))
-            .padding(amane::Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 10.0 })
+            .padding(Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 10.0 })
             .align_child(Start, Center)
-            .cursor(amane::Pointer)
+            .cursor(Pointer)
             .on_hover(move |inside| set_hover(&key, inside))
             .on_click(move |_| click(&target))
             .child(
                 Row::new(vec![
                     Box::new(Rectangle::new().width(14.0).height(14.0).align_child(Center, Center).child(lead)) as Box<dyn Widget>,
-                    Box::new(Rectangle::new().width(WIDTH - 28.0 - 20.0 - 14.0 - 14.0 - 16.0).height(18.0).child(label(&node.label, 12.5, color).elide())),
+                    Box::new(Rectangle::new().width(LABEL_WIDTH).height(18.0).child(label(&node.label, 12.5, color).elide())),
                     trail,
                 ])
                 .gap(8.0)
@@ -297,13 +304,13 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
     if !menu.stack.is_empty() {
         sections.push(Box::new(
             Rectangle::new()
-                .width(WIDTH - 28.0)
-                .height(30.0)
-                .radius(crate::theme::RADIUS_SMALL)
-                .cursor(amane::Pointer)
+                .width(ROW_WIDTH)
+                .height(ROW)
+                .radius(RADIUS_SMALL)
+                .cursor(Pointer)
                 .on_click(|_| back())
                 .align_child(Start, Center)
-                .padding(amane::Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 10.0 })
+                .padding(Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 10.0 })
                 .child(
                     Row::new(children![icon("\u{f053}", 10.0, t.accent), bold(&current.label, 12.5, t.fg)])
                         .gap(10.0)
@@ -311,7 +318,7 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
                 ),
         ));
 
-        total += 30.0 + 8.0;
+        total += ROW + 8.0;
     }
 
     // its own scroll position at every level, so a submenu doesn't open scrolled like the menu it came from
@@ -320,7 +327,7 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
 
     sections.push(Box::new(
         Rectangle::new()
-            .width(WIDTH - 28.0)
+            .width(ROW_WIDTH)
             .height(list_height)
             .clip()
             .child(ScrollArea::new(scroll_id, Column::new(rows).gap(2.0))),

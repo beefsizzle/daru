@@ -1,21 +1,23 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
-use amane::{Argument, Bus, Service, Value};
+use amane::{Argument, Bus, Method, Service, Value};
 
 use crate::sync::lock;
 
 /*
- * the system tray. the shell is the StatusNotifierWatcher, so tray apps register here,
- * and also scans the bus for items that were running before it started.
+ * the system tray, over StatusNotifierItem. the shell is the StatusNotifierWatcher, so tray apps register here. when
+ * another program already is, the shell reads that one's list instead. items that were running before either are found
+ * on the bus by name
  */
 #[derive(Clone, PartialEq, Default)]
 pub struct TrayItem {
     pub destination: String,
     pub path: String,
-    pub title: String,
     pub icon: String, // a PNG or SVG file, empty when the item has none we can draw
     pub menu: String, // dbusmenu object path, empty when the app has no menu
     pub is_menu: bool, // left click should open the menu too
@@ -39,9 +41,8 @@ const ANSWER_WITHIN: Duration = Duration::from_millis(1500);
 
 /*
  * a round of asking every app runs when something says it changed: an app registering, one of the item signals below,
- * or an app's name coming or going on the bus. it used to run every 2 seconds, about 20 D-Bus calls and a thread per app
- * each time, which made the tray the busiest thing in an idle shell. an app that changes something without saying so
- * still shows it within a minute
+ * or an app's name coming or going on the bus. an app that changes something without saying so still shows it within
+ * a minute
  */
 const AT_LEAST_EVERY: Duration = Duration::from_secs(60);
 
@@ -56,6 +57,14 @@ const LARGEST_ICON: u64 = 512;
 
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const ITEM: &str = "org.kde.StatusNotifierItem";
+
+// what the watcher answers about itself
+const WATCHER_PROPERTIES: [&str; 3] = ["IsStatusNotifierHostRegistered", "ProtocolVersion", "RegisteredStatusNotifierItems"];
+
+// the names apps take for an item of their own, before the pid and a counter
+fn is_item_name(name: &str) -> bool {
+    name.starts_with("org.kde.StatusNotifierItem-") || name.starts_with("org.freedesktop.StatusNotifierItem-")
+}
 
 impl Service for Tray {
     fn new() -> Self {
@@ -138,6 +147,7 @@ impl Service for Tray {
 
                     let _ = changed.send(());
                 }
+                // RegisterStatusNotifierHost: the shell is the only host it needs
                 _ => method.reply(&[]),
             }
         }
@@ -159,8 +169,8 @@ fn registration(service: &str, sender: &str) -> (String, String) {
     }
 }
 
-// clients ask the watcher whether a host exists before they bother registering
-fn answer_properties(properties: impl Iterator<Item = amane::Method>) {
+// apps ask the watcher whether a host exists before they bother registering, and some fall back to XEmbed without one
+fn answer_properties(properties: impl Iterator<Item = Method>) {
     for method in properties {
         let registered: Vec<String> = lock(&REGISTERED).iter().map(|(name, _)| name.clone()).collect();
 
@@ -183,9 +193,9 @@ fn answer_properties(properties: impl Iterator<Item = amane::Method>) {
                 }
             }
             "GetAll" => {
-                let mut map = std::collections::BTreeMap::new();
+                let mut map = BTreeMap::new();
 
-                for name in ["IsStatusNotifierHostRegistered", "ProtocolVersion", "RegisteredStatusNotifierItems"] {
+                for name in WATCHER_PROPERTIES {
                     if let Some(argument) = value(name) {
                         map.insert(name.to_string(), argument);
                     }
@@ -206,7 +216,7 @@ fn follow_names(changed: &Sender<()>) {
     for signal in Bus::session().signals("org.freedesktop.DBus", "NameOwnerChanged") {
         let name = signal.arguments().first().map_or("", Value::text);
 
-        let an_item_name = name.starts_with("org.kde.StatusNotifierItem-") || name.starts_with("org.freedesktop.StatusNotifierItem-");
+        let an_item_name = is_item_name(name);
         let shown = || Tray::read().items.iter().any(|item| item.destination == name);
         let registered = || lock(&REGISTERED).iter().any(|(destination, _)| destination == name);
 
@@ -231,24 +241,19 @@ fn wait_for_change(changes: &Receiver<()>) {
 fn candidates(bus: &Bus, names: &[String]) -> Vec<(String, String)> {
     let mut found: Vec<(String, String)> = lock(&REGISTERED).clone();
 
+    // another watcher's list always names the app, so there's no caller to fall back on
     for name in bus.property(WATCHER, "/StatusNotifierWatcher", WATCHER, "RegisteredStatusNotifierItems").list() {
-        let service = name.text();
-
-        found.push(match service.split_once('/') {
-            Some((name, path)) => (name.to_string(), format!("/{path}")),
-            None => (service.to_string(), String::from("/StatusNotifierItem")),
-        });
+        found.push(registration(name.text(), ""));
     }
 
-    let mut scanned: Vec<&String> =
-        names.iter().filter(|name| name.starts_with("org.kde.StatusNotifierItem-") || name.starts_with("org.freedesktop.StatusNotifierItem-")).collect();
+    let mut scanned: Vec<&String> = names.iter().filter(|name| is_item_name(name)).collect();
 
     scanned.sort();
 
     found.extend(scanned.into_iter().map(|name| (name.clone(), String::from("/StatusNotifierItem"))));
 
     // the first entry for an app wins, which is the path it registered with
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
 
     found.retain(|(destination, _)| seen.insert(destination.clone()));
 
@@ -265,26 +270,21 @@ fn fetch_item(destination: &str, path: &str, refresh_icon: bool, previous: Optio
         return None;
     }
 
-    let mut title = text("Title");
-
-    if title.is_empty() {
-        title = text("Id");
-    }
-
     let icon = icon_for(&bus, destination, path, &text("IconName"), &text("IconThemePath"), refresh_icon, previous.map(|item| item.icon.as_str()));
 
     let menu = text("Menu");
     let is_menu = bus.property(destination, path, ITEM, "ItemIsMenu").bool();
 
-    Some(TrayItem { destination: destination.to_string(), path: path.to_string(), title, icon, menu, is_menu })
+    Some(TrayItem { destination: destination.to_string(), path: path.to_string(), icon, menu, is_menu })
 }
 
+// the tray's own loop: a round of asking every app, then waiting for the next change
 fn poll(changes: &Receiver<()>) {
     let bus = Bus::session();
 
     // apps whose pixmap has to be read again. a NewIcon doesn't say who sent it, so it marks every app, and an app
     // stays marked until it has answered: one that was slow or busy in that round would otherwise keep its old icon
-    let mut stale: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut stale: HashSet<String> = HashSet::new();
 
     loop {
         let names: Vec<String> = bus
@@ -306,7 +306,7 @@ fn poll(changes: &Receiver<()>) {
 
         // each app is asked on a thread of its own. a D-Bus call has no timeout, so asking one after another would let a
         // single frozen app stall every icon forever
-        let (sender, receiver) = std::sync::mpsc::channel::<(usize, String, Option<TrayItem>)>();
+        let (sender, receiver) = mpsc::channel::<(usize, String, Option<TrayItem>)>();
 
         let mut slots: Vec<Option<TrayItem>> = Vec::new();
         let mut waiting = 0;
@@ -364,7 +364,7 @@ fn poll(changes: &Receiver<()>) {
         let items: Vec<TrayItem> = slots.into_iter().flatten().collect();
 
         // an icon that changes every poll (a spinner, a progress badge) would otherwise leave a file behind each time
-        let keep: std::collections::HashSet<std::path::PathBuf> = items.iter().map(|item| std::path::PathBuf::from(&item.icon)).collect();
+        let keep: HashSet<PathBuf> = items.iter().map(|item| PathBuf::from(&item.icon)).collect();
 
         crate::cache::prune("tray-", &keep);
 
@@ -376,12 +376,13 @@ fn poll(changes: &Receiver<()>) {
     }
 }
 
+// the file to draw: a named icon from the app's own folder or the icon theme, otherwise the pixels the app sends
 fn icon_for(bus: &Bus, destination: &str, path: &str, name: &str, theme_path: &str, refresh: bool, previous: Option<&str>) -> String {
     if !name.is_empty() {
         for extension in ["svg", "png"] {
             let file = format!("{theme_path}/{name}.{extension}");
 
-            if !theme_path.is_empty() && std::path::Path::new(&file).exists() {
+            if !theme_path.is_empty() && Path::new(&file).exists() {
                 return file;
             }
         }
@@ -448,9 +449,9 @@ fn pixmap_file(bus: &Bus, destination: &str, path: &str) -> String {
 
         // written under another name and renamed, so a half-written icon is never drawn. the name is this write's
         // own and doesn't start with "tray-", so neither another app with the same icon nor `prune` can touch it
-        static WRITES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        static WRITES: AtomicU32 = AtomicU32::new(0);
 
-        let partial = directory.join(format!("partial-tray-{}.png", WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+        let partial = directory.join(format!("partial-tray-{}.png", WRITES.fetch_add(1, Ordering::Relaxed)));
 
         if std::fs::write(&partial, png(width, height, &rgba)).is_err() || std::fs::rename(&partial, &file).is_err() {
             let _ = std::fs::remove_file(&partial);
@@ -548,10 +549,11 @@ pub fn click(item: &TrayItem, button: amane::Button, monitor: &str) {
             return;
         }
 
-        // an app without a dbusmenu is asked to draw its own
         if crate::traymenu::open(item, monitor) {
             return;
         }
+
+        // no dbusmenu: ContextMenu below asks the app to draw its own
     }
 
     let method = match button {
