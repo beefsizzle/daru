@@ -4,7 +4,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /*
- * icon name -> file, for notifications and the tray. looked up on demand in the installed themes and remembered.
+ * icon name -> file. looked up on demand in the installed themes and remembered.
  * an index of every icon on the system would cost tens of thousands of strings to find the few dozen that get asked for
  */
 // a miss is remembered for a while only: an icon can be installed after the app that asks for it started

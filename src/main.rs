@@ -175,10 +175,14 @@ fn main() {
         .ipc("tray-menu", |arguments| {
             let index: usize = arguments.first().and_then(|text| text.parse().ok()).unwrap_or(0);
 
-            let item = tray::Tray::read().items.get(index).cloned();
+            let item = tray::shown(&amane::Tray::read()).nth(index).map(|item| (item.id(), item.has_menu()));
 
             match item {
-                Some(item) if traymenu::open(&item, &panels::focused_output()) => String::from("ok"),
+                Some((id, true)) => {
+                    traymenu::open(id, &panels::focused_output());
+
+                    String::from("ok")
+                }
                 Some(_) => String::from("that icon has no menu"),
                 None => String::from("no such tray icon"),
             }

@@ -56,7 +56,7 @@ pub fn fnv(data: &[u8]) -> u64 {
 }
 
 /*
- * where short-lived files go (tray icons drawn from raw pixels).
+ * where short-lived files go (clipboard thumbnails, screenshots being taken).
  * $XDG_RUNTIME_DIR belongs to the user, mode 0700, and is cleared at logout. a fixed name in /tmp would be
  * world-writable ground where another user could plant a symlink at the name we're about to write
  */

@@ -227,17 +227,16 @@ fn clock(t: &Theme, name: &str) -> Rectangle {
 }
 
 fn tray(t: &Theme, name: &str) -> Rectangle {
-    let tray = crate::tray::Tray::read();
+    let tray = amane::Tray::read();
 
     let mut icons: Vec<Box<dyn Widget>> = Vec::new();
 
-    for item in &tray.items {
-        let target = item.clone();
+    for item in crate::tray::shown(&tray) {
+        let id = item.id();
 
-        let picture = if item.icon.is_empty() {
-            Rectangle::new().width(16.0).height(16.0).radius(0.0).fill(t.faint)
-        } else {
-            Rectangle::new().width(16.0).height(16.0).fill(amane::Image::contain(&item.icon))
+        let picture = match item.icon_path() {
+            Some(path) => Rectangle::new().width(16.0).height(16.0).fill(amane::Image::contain(path)),
+            None => Rectangle::new().width(16.0).height(16.0).radius(0.0).fill(t.faint),
         };
 
         icons.push(Box::new(
@@ -249,7 +248,7 @@ fn tray(t: &Theme, name: &str) -> Rectangle {
                 .on_click({
                     let monitor = name.to_string();
 
-                    move |button| crate::tray::click(&target, button, &monitor)
+                    move |button| crate::tray::click(id, button, &monitor)
                 })
                 .child(picture),
         ));

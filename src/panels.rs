@@ -32,7 +32,6 @@ pub struct Panels {
     pub open: [bool; COUNT], // indexed by `Which`
     pub monitor: String,     // the monitor they open on, empty for all of them
     pub armed: Option<&'static str>, // power action waiting for a second click
-    generation: u64,                 // counts every change, so a late answer can tell it's out of date
     fades: [Animation; COUNT],       // how far each open panel has faded in, 0 to 1
 }
 
@@ -42,7 +41,6 @@ impl Service for Panels {
             open: [false; COUNT],
             monitor: String::new(),
             armed: None,
-            generation: 0,
             fades: std::array::from_fn(|_| Animation::new(0.0).duration(FADE)),
         }
     }
@@ -134,18 +132,7 @@ pub fn focused_output() -> String {
  * notifications and wallpaper picker together
  */
 fn update(monitor: Option<&str>, edit: impl FnOnce(&mut [bool; COUNT])) {
-    update_since(None, monitor, edit);
-}
-
-// the same, but only when nothing changed after `since` (a `generation()`). false when something did
-fn update_since(since: Option<u64>, monitor: Option<&str>, edit: impl FnOnce(&mut [bool; COUNT])) -> bool {
     let mut panels = Panels::write();
-
-    if since.is_some_and(|since| since != panels.generation) {
-        return false;
-    }
-
-    panels.generation += 1;
 
     let before = panels.open;
 
@@ -178,8 +165,6 @@ fn update_since(since: Option<u64>, monitor: Option<&str>, edit: impl FnOnce(&mu
     drop(panels);
 
     changed(&before, &after);
-
-    true
 }
 
 /// a panel that has just been opened starts fresh
@@ -224,26 +209,6 @@ pub fn show(which: Which, monitor: &str) {
     opened(which);
 }
 
-/// what the panels look like now, for `show_since`
-pub fn generation() -> u64 {
-    Panels::read().generation
-}
-
-/// `show`, for an answer that took a while: only when no panel was opened or closed after `since`, so a panel the
-/// user dismissed (or replaced) in the meantime doesn't pop up late. returns whether it opened
-pub fn show_since(since: u64, which: Which, monitor: &str) -> bool {
-    let opened_now = update_since(Some(since), Some(monitor), |open| {
-        *open = [false; COUNT];
-        open[which as usize] = true;
-    });
-
-    if opened_now {
-        opened(which);
-    }
-
-    opened_now
-}
-
 /// for keybinds and ipc, where nothing says which monitor was meant
 pub fn toggle_here(which: Which) {
     toggle(which, &focused_output());
@@ -286,6 +251,13 @@ pub fn changed(before: &[bool; COUNT], after: &[bool; COUNT]) {
         crate::sys::refresh();
         crate::netinfo::refresh();
         crate::wifi::opened();
+    }
+
+    // a tray menu is let go when it closes, so the next one is read fresh and shows what the app changed since
+    let tray_menu = Which::TrayMenu as usize;
+
+    if before[tray_menu] && !after[tray_menu] {
+        amane::Tray::close_menu();
     }
 
     // the power dropdown shows the power profile, which can change elsewhere while it's closed
