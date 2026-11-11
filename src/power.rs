@@ -6,7 +6,7 @@ use crate::ui::{hover, icon, label, set_hover};
 
 /*
  * the power dropdown under the power button. every entry has a number key, the same one every time,
- * so 3 is always sleep. bound to Alt+X in niri and Umbriel.
+ * so 3 is always sleep. bound to Mod+X in umbriel/config.toml.
  *
  * above the entries sits the power profile switcher (power saver, balanced, performance, see profiles.rs), moved by
  * clicking or with the left and right arrow keys. it hides on a machine without power-profiles-daemon

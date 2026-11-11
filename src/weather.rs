@@ -115,7 +115,7 @@ impl Service for Weather {
 
     /*
      * the request takes up to 15 seconds, so it runs before the lock is taken. `update()` runs with the service
-     * locked, and the bar reads this one on every frame, so a slow request there froze every window
+     * locked, and the bar reads this one on every frame, so a slow request there would freeze every window
      */
     fn listen() {
         loop {

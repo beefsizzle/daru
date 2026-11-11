@@ -45,9 +45,6 @@ fn counts_file() -> std::path::PathBuf {
 
 impl Service for Launcher {
     fn new() -> Self {
-        // it used to be kept with the caches
-        crate::cache::move_from(&crate::cache::cache_dir().join("launch-counts"), &counts_file());
-
         let counts = std::fs::read_to_string(counts_file())
             .unwrap_or_default()
             .lines()

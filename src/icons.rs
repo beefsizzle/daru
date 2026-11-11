@@ -25,7 +25,7 @@ const NUMBERS: [&str; 6] = ["256", "128", "64", "48", "32", "22"];
  * the data folders icons live under, the user's first: XDG_DATA_HOME (or ~/.local/share), then each folder in
  * XDG_DATA_DIRS, which means /usr/local/share and /usr/share when it's unset, as the spec says. NixOS has no
  * /usr/share at all: its icons sit in the profiles XDG_DATA_DIRS names (/run/current-system/sw/share,
- * /etc/profiles/per-user/<user>/share), so a fixed /usr/share/icons found nothing there
+ * /etc/profiles/per-user/<user>/share), so a fixed /usr/share/icons would find nothing there
  */
 pub fn data_dirs() -> Vec<String> {
     let home = std::env::var("HOME").unwrap_or_default();

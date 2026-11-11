@@ -91,7 +91,7 @@ impl Service for History {
  * what the battery uses, in watts, and over how long, from the charge it lost while it ran down without a break
  * (up to DRAW_OVER back). None until it has been on battery for DRAW_AFTER.
  *
- * the kernel's own power_now isn't used on battery: it can't be trusted everywhere. the laptop's aftermarket battery
+ * the kernel's own power_now isn't used on battery: it can't be trusted everywhere. one laptop's aftermarket battery
  * never reads below its charge divided by ten hours, so above about 45% it says ~5 W at idle against a real 2.6-2.9 W
  * (worked out from the charge used over time). charging, power_now is real, see `Details`
  */

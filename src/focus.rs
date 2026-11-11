@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use amane::Service;
 
-use crate::compositor::{self, Compositor};
+use crate::compositor;
 
-// the title of the focused window, from niri's or Umbriel's event stream
+// the title of the focused window, from Umbriel's event stream. empty on another compositor
 pub struct Focus {
     pub title: String,
 }
@@ -47,11 +47,6 @@ fn unicode(characters: &mut std::str::Chars) -> Option<u32> {
     let digits: String = characters.take(4).collect();
 
     u32::from_str_radix(&digits, 16).ok()
-}
-
-fn read() -> String {
-    // `"title":null` (a window without one) doesn't match, which is an empty title
-    json_string(&amane::output("niri msg --json focused-window"), "title").unwrap_or_default()
 }
 
 /*
@@ -113,44 +108,28 @@ impl Service for Focus {
     }
 
     /*
-     * the compositor says a window changed far more often than the focused one's title does (every terminal prompt,
-     * every loading tab), so a reader thread passes the events on, and this thread sleeps until it hears one, waits a
-     * tenth of a second for the rest of a burst, and works out the title once. nothing wakes while nothing happens
+     * Umbriel sends its whole window list on every change to any window (a title, a move, each frame of an animation),
+     * far more often than the focused one's title changes. so a reader thread passes the lists on, and this thread
+     * sleeps until one comes, waits a tenth of a second for the rest of a burst, and works out the title once, from
+     * the last of them. nothing wakes while nothing happens
      */
     fn listen() {
-        // an event, with Umbriel's whole window list; niri's only says to look again
-        let (noted, events) = std::sync::mpsc::channel::<Option<String>>();
-
-        match compositor::running() {
-            Compositor::Niri => {
-                // the first look
-                let _ = noted.send(None);
-
-                std::thread::spawn(move || follow_niri(&noted));
-            }
-            // Umbriel sends the list as it is first
-            Compositor::Umbriel => {
-                std::thread::spawn(move || follow_umbriel(&noted));
-            }
-            Compositor::Other => return,
+        if !compositor::umbriel() {
+            return;
         }
 
-        while let Ok(event) = events.recv() {
+        let (noted, lists) = std::sync::mpsc::channel::<String>();
+
+        std::thread::spawn(move || follow(&noted));
+
+        while let Ok(mut latest) = lists.recv() {
             std::thread::sleep(Duration::from_millis(100));
 
-            // everything that arrived meanwhile is the same burst, and only Umbriel's latest list counts
-            let mut latest = event;
-
-            while let Ok(more) = events.try_recv() {
-                if more.is_some() {
-                    latest = more;
-                }
+            while let Ok(newer) = lists.try_recv() {
+                latest = newer;
             }
 
-            let title = match latest {
-                Some(snapshot) => focused_title(&snapshot),
-                None => read(),
-            };
+            let title = focused_title(&latest);
 
             if title != Self::read().title {
                 Self::write().title = title;
@@ -159,40 +138,13 @@ impl Service for Focus {
     }
 }
 
-// niri's events, started again if the stream ends (niri restarted)
-fn follow_niri(noted: &std::sync::mpsc::Sender<Option<String>>) {
-    loop {
-        for line in amane::lines("niri msg --json event-stream") {
-            // a changed window matters only if it's the focused one
-            let relevant = line.contains("WindowFocusChanged")
-                || line.contains("WindowClosed")
-                || line.contains("WorkspaceActivated")
-                || (line.contains("WindowOpenedOrChanged") && line.contains("\"is_focused\":true"));
-
-            if relevant && noted.send(None).is_err() {
-                return;
-            }
-        }
-
-        // the stream ended: wait for niri, then read the title again
-        std::thread::sleep(Duration::from_secs(2));
-
-        if noted.send(None).is_err() {
-            return;
-        }
-    }
-}
-
-/*
- * Umbriel's window lists, a whole one on every change to any window (a title, a move, each frame of an animation).
- * they're passed on whole, and only the last of a burst is read
- */
-fn follow_umbriel(noted: &std::sync::mpsc::Sender<Option<String>>) {
+// the lists as they come, the first being how things are now. started again if Umbriel restarts
+fn follow(noted: &std::sync::mpsc::Sender<String>) {
     loop {
         let mut gone = false;
 
         compositor::umbriel_events(&["windows"], |line| {
-            gone = noted.send(Some(line)).is_err();
+            gone = noted.send(line).is_err();
 
             !gone
         });

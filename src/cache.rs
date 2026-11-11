@@ -27,23 +27,6 @@ pub fn state_dir() -> PathBuf {
     xdg("XDG_STATE_HOME", ".local/state").join("amane-shell")
 }
 
-/// moves a file the shell used to keep somewhere else to where it belongs now, once. nothing happens when it's
-/// already there, or was never made
-pub fn move_from(old: &Path, new: &Path) {
-    if new.exists() || !old.exists() {
-        return;
-    }
-
-    if let Some(folder) = new.parent() {
-        let _ = fs::create_dir_all(folder);
-    }
-
-    // a rename can't cross file systems, a copy can
-    if fs::rename(old, new).is_err() && fs::copy(old, new).is_ok() {
-        let _ = fs::remove_file(old);
-    }
-}
-
 /// a stable 64-bit hash (FNV-1a), for naming cache files after what they hold
 pub fn fnv(data: &[u8]) -> u64 {
     let mut hash: u64 = 1469598103934665603;

@@ -6,7 +6,7 @@ use amane::{
 
 use crate::theme::{Theme, theme};
 
-// how long a panel takes to fade in. closing is instant: niri's blur behind a window that fades out smears
+// how long a panel takes to fade in. closing is instant: a compositor's blur behind a window that fades out can smear
 const FADE: Duration = Duration::from_millis(200);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -104,9 +104,9 @@ pub fn note_monitor(monitor: &Monitor) {
 }
 
 /*
- * the monitor with keyboard focus, which is where a keybind should open things. read from the workspaces niri
- * reports (the focused workspace is on the focused monitor, and every switch is an event), so there's nothing to
- * wait for. this runs in ipc handlers, which run on the thread that draws every window
+ * the monitor with keyboard focus, which is where a keybind should open things. read from the workspaces the
+ * compositor reports (the focused workspace is on the focused monitor, and every switch is an event), so there's
+ * nothing to wait for. this runs in ipc handlers, which run on the thread that draws every window
  */
 pub fn focused_output() -> String {
     let workspaces = amane::Workspaces::read();
@@ -126,10 +126,9 @@ pub fn focused_output() -> String {
  * are closed), let `edit` decide which are open, forget a half-confirmed power button, and run the hooks for
  * whatever just opened or closed.
  *
- * only one panel is open at a time, like the dropdowns of other bars: opening one closes the one that was open.
- * (they used to be combinable when they didn't overlap, but a bar where some dropdowns replace each other and
- * others pile up is harder to predict than one rule.) `toggle all` still opens the dashboard, calendar,
- * notifications and wallpaper picker together
+ * only one panel is open at a time, like the dropdowns of other bars: opening one closes the one that was open. one
+ * rule is easier to predict than a bar where some dropdowns replace each other and others pile up. `toggle all`
+ * opens the dashboard, calendar, notifications and wallpaper picker together
  */
 fn update(monitor: Option<&str>, edit: impl FnOnce(&mut [bool; COUNT])) {
     let mut panels = Panels::write();

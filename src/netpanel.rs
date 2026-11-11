@@ -70,14 +70,14 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
 
     let (glyph, title) = match network.link() {
         Link::Wired => ("\u{f0200}", String::from("Wired connection")),
-        Link::Wifi => (wifi::glyph(network.strength(), wifi::internet(&network)), format!("Wi-Fi \u{b7} {}", network.ssid())),
+        Link::Wifi => (wifi::glyph(network.strength(), network.internet()), format!("Wi-Fi \u{b7} {}", network.ssid())),
         Link::Offline => ("\u{f05aa}", String::from("Offline")),
         _ => ("\u{f0200}", String::from("Connected")),
     };
 
     let mut subtitle = if info.interface.is_empty() { String::from("No active interface") } else { format!("{} \u{b7} {}", info.connection, info.interface) };
 
-    if network.connected() && !wifi::internet(&network) {
+    if network.connected() && !network.internet() {
         subtitle = format!("No internet \u{b7} {subtitle}");
     }
 
@@ -214,7 +214,7 @@ fn status(point: &AccessPoint, wifi: &Wifi, connecting: bool, internet: bool) ->
         return (String::from(text), false);
     }
 
-    if wifi::enterprise(point) && !point.saved() {
+    if point.enterprise() && !point.saved() {
         return (String::from("Needs a username, not supported here"), false);
     }
 
@@ -236,9 +236,9 @@ fn network_row(t: &Theme, index: usize, point: &AccessPoint, wifi: &Wifi, networ
     let busy = wifi.joining.is_some();
 
     // an enterprise network needs a username the panel can't ask for, so only a profile made elsewhere joins it
-    let unsupported = wifi::enterprise(point) && !saved;
+    let unsupported = point.enterprise() && !saved;
 
-    let (text, lit) = status(point, wifi, network.connecting(), wifi::internet(network));
+    let (text, lit) = status(point, wifi, network.connecting(), network.internet());
 
     let action = if active {
         "Disconnect"

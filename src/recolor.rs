@@ -15,8 +15,6 @@ use crate::theme::{Theme, hex, mix, over, theme, to_hsl};
  *     gtk       ~/.config/gtk-4.0/daru.css, for GTK4 and libadwaita apps when they next start, and GNOME's accent
  *               setting, which libadwaita apps follow at once, even ones already open. `@import url("daru.css");` in
  *               ~/.config/gtk-4.0/gtk.css
- *     niri      ~/.config/niri/daru-colors.kdl, the focus ring. niri reloads it by itself. `include "daru-colors.kdl"`
- *               at the end of config.kdl
  *     umbriel   ~/.config/umbriel/daru-colors.toml, the window borders, for `[include.optional] files =
  *               ["daru-colors.toml"]` in Umbriel's config. Umbriel is asked to reload
  *     ghostty   ~/.config/ghostty/daru-colors, background, text, cursor and selection. Ghostty is asked to reload.
@@ -38,7 +36,6 @@ use crate::theme::{Theme, hex, mix, over, theme, to_hsl};
 #[derive(Clone, Copy, PartialEq)]
 enum App {
     Gtk,
-    Niri,
     Umbriel,
     Ghostty,
     Foot,
@@ -59,7 +56,6 @@ fn wanted() -> Vec<App> {
         .map(|line| line.split('#').next().unwrap_or("").trim())
         .filter_map(|name| match name {
             "gtk" => Some(App::Gtk),
-            "niri" => Some(App::Niri),
             "umbriel" => Some(App::Umbriel),
             "ghostty" => Some(App::Ghostty),
             "foot" => Some(App::Foot),
@@ -74,13 +70,8 @@ fn wanted() -> Vec<App> {
 }
 
 /// writes the current colours for every app that asked for them. the files are small, but this runs on a thread of
-/// its own all the same, after the shell has already recoloured itself. DARU_NO_RECOLOR turns it off, for a second
-/// shell that shares the home folder (a test copy in a nested compositor), so it doesn't overwrite the real one's files
+/// its own all the same, after the shell has already recoloured itself
 pub fn export() {
-    if std::env::var_os("DARU_NO_RECOLOR").is_some_and(|value| !value.is_empty()) {
-        return;
-    }
-
     std::thread::spawn(|| {
         let _writing = crate::sync::lock(&WRITING);
 
@@ -98,9 +89,6 @@ pub fn export() {
                     write(&config("gtk-4.0/daru.css"), &gtk(&colors));
 
                     set_accent(gnome_accent(colors.accent));
-                }
-                App::Niri => {
-                    write(&config("niri/daru-colors.kdl"), &niri(&colors));
                 }
                 App::Umbriel => {
                     if write(&config("umbriel/daru-colors.toml"), &umbriel(&colors)) {
@@ -328,15 +316,7 @@ fn set_accent(name: &str) {
         .status();
 }
 
-fn niri(c: &Colors) -> String {
-    format!(
-        "// {HEADER}\n\nlayout {{\n    focus-ring {{\n        active-color \"{}\"\n        inactive-color \"{}\"\n    }}\n}}\n",
-        hex(c.accent),
-        hex(c.raised),
-    )
-}
-
-// the window borders, as niri's focus ring: the accent on the focused window. colours as "#rrggbbaa"
+// the window borders: the accent on the focused window. colours as "#rrggbbaa"
 fn umbriel(c: &Colors) -> String {
     format!(
         "# {HEADER}\n\n[colors.border]\nfocused = \"{}ff\"\nunfocused = \"{}ff\"\n",
@@ -348,7 +328,7 @@ fn umbriel(c: &Colors) -> String {
 // Umbriel watches its own config file but not every file it includes, so it's asked to read them again. only while
 // it's the compositor running: the command would fail anywhere else
 fn reload_umbriel() {
-    if std::env::var_os("UMBRIEL_SOCKET").is_none() {
+    if !crate::compositor::umbriel() {
         return;
     }
 

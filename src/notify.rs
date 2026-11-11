@@ -34,9 +34,9 @@ impl Service for Notify {
     }
 
     /*
-     * runs outside `update()`, which holds the service locked: asking niri which monitor has focus takes a process
-     * spawn, and the toast windows read this service while drawing. between rounds it sleeps until the first toast on
-     * screen is due to go, or until the toast windows see something new (`noticed`), so an idle shell never wakes it
+     * runs outside `update()`, which holds the service locked while the toast windows read it to draw. between rounds
+     * it sleeps until the first toast on screen is due to go, or until the toast windows see something new (`noticed`),
+     * so an idle shell never wakes it
      */
     fn listen() {
         loop {

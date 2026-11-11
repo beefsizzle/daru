@@ -47,8 +47,7 @@ impl Service for Logind {
 /*
  * the lock is held by `systemd-inhibit` for as long as its command runs. the command waits for this process to exit
  * (`tail --pid`) instead of `sleep infinity`, so a restart, a crash or a kill releases the lock too, and no shell has
- * to clean up after another. (one that did, with a pkill at start, also took the lock away from a second shell that
- * was still running, like the live one while a nested test session starts)
+ * to clean up after another, which would also take the lock away from a second shell that's still running
  */
 fn inhibit() -> Option<Child> {
     let pid = std::process::id().to_string();
@@ -79,9 +78,9 @@ fn release(inhibitor: &mut Child) {
 }
 
 /*
- * the logind object of this session, so a lock request for somebody else's session doesn't lock ours. the shell
- * isn't inside a session's own cgroup (niri starts it as a user service), so logind can't find it by pid:
- * the session id niri exports is tried first, then the graphical session logind lists for this user
+ * the logind object of this session, so a lock request for somebody else's session doesn't lock ours. logind can't
+ * always find the shell by pid (one started as a user service isn't inside the session's own cgroup), so the session
+ * id in the environment is tried first, then the graphical session logind lists for this user
  */
 fn session_path(bus: &Bus) -> String {
     let manager = "org.freedesktop.login1.Manager";

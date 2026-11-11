@@ -90,7 +90,7 @@ fn scoped(id: &str) -> String {
 }
 
 pub fn hover(id: &str) -> f32 {
-    Hover::read().items.get(id).map_or(0.0, |animation| animation.value())
+    Hover::read().items.get(id).map_or(0.0, Animation::value)
 }
 
 pub fn set_hover(id: &str, inside: bool) {

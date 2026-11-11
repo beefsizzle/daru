@@ -6,20 +6,20 @@ use std::process::{Command, Stdio};
 use amane::{Argument, Bus};
 
 /*
- * what differs between the compositors the shell runs on: how to log out, how to take a screenshot, and where the
- * focused window's title comes from (see focus.rs). each sets its own variable for the programs it starts
+ * what the shell asks of the compositor: logging out, screenshots, and Umbriel's event stream, which the focused
+ * window's title (focus.rs) and the layout chip (layouts.rs) follow. the shell is made for Umbriel. on another
+ * compositor it still runs, without the parts that need Umbriel
  */
-#[derive(Clone, Copy, PartialEq)]
-pub enum Compositor {
-    Niri,
-    Umbriel,
-    Other,
+
+/// whether Umbriel is the compositor: it sets this for the programs it starts
+pub fn umbriel() -> bool {
+    std::env::var_os("UMBRIEL_SOCKET").is_some()
 }
 
 /*
  * Umbriel's event stream for these families (see its ipc docs), straight from its socket: `each` gets every line, the
- * state as it is first and then a whole new snapshot on every change. `umbriel subscribe` does the same, but kept a
- * process of about 9 MB running for each family followed. returns when Umbriel goes away or `each` says to stop
+ * state as it is first and then a whole new snapshot on every change. `umbriel subscribe` does the same, but costs a
+ * process of about 9 MB for each family followed. returns when Umbriel goes away or `each` says to stop
  */
 pub fn umbriel_events(families: &[&str], mut each: impl FnMut(String) -> bool) {
     use std::io::{BufRead, BufReader, Write};
@@ -47,26 +47,15 @@ pub fn umbriel_events(families: &[&str], mut each: impl FnMut(String) -> bool) {
     }
 }
 
-pub fn running() -> Compositor {
-    if std::env::var_os("NIRI_SOCKET").is_some() {
-        Compositor::Niri
-    } else if std::env::var_os("UMBRIEL_SOCKET").is_some() {
-        Compositor::Umbriel
-    } else {
-        Compositor::Other
-    }
-}
-
 /*
- * ends the session without asking. Umbriel takes an action's arguments as separate words (it used to join them with a
- * colon, and `umbriel msg` now refuses that). logind ends the session if Umbriel can't: right after an update, the
- * new `umbriel` command can't talk to a compositor that's still the old one until you log in again
+ * ends the session without asking. logind ends it if Umbriel can't: right after an update, the new `umbriel` command
+ * can't talk to a compositor that's still the old one until you log in again
  */
 pub fn log_out() -> &'static str {
-    match running() {
-        Compositor::Niri => "niri msg action quit --skip-confirmation",
-        Compositor::Umbriel => "umbriel msg session-quit skip-confirmation || loginctl terminate-session \"$XDG_SESSION_ID\"",
-        Compositor::Other => "loginctl terminate-session \"$XDG_SESSION_ID\"",
+    if umbriel() {
+        "umbriel msg session-quit skip-confirmation || loginctl terminate-session \"$XDG_SESSION_ID\""
+    } else {
+        "loginctl terminate-session \"$XDG_SESSION_ID\""
     }
 }
 
@@ -89,7 +78,7 @@ impl Shot {
     }
 }
 
-/// where the next screenshot goes, as niri saves them
+/// where the next screenshot goes: ~/Pictures/Screenshots, named after the time it was taken
 pub fn new_file() -> Option<PathBuf> {
     let folder = PathBuf::from(std::env::var_os("HOME")?).join("Pictures/Screenshots");
 
@@ -133,7 +122,7 @@ pub fn announce(picture: &str, summary: &str, body: &str) {
     );
 }
 
-/// a saved screenshot is copied too, and announced with the picture in the notification, as niri does
+/// a saved screenshot is copied too, and announced with the picture in the notification
 pub fn finish(file: &Path) -> bool {
     let copied = copy(file);
 
@@ -146,7 +135,7 @@ pub fn finish(file: &Path) -> bool {
 
 /// the monitor in focus, where the compositor says
 pub fn focused_output() -> Option<String> {
-    (running() == Compositor::Umbriel)
+    umbriel()
         .then(|| amane::output("umbriel outputs --json | jq -r '.[] | select(.focused) | .name'"))
         .filter(|name| !name.is_empty())
 }
@@ -167,18 +156,15 @@ fn screen(output: Option<String>) {
 }
 
 /*
- * takes a screenshot without waiting for it. niri's own tool saves, copies and notifies by itself, and freezes the
- * screen while a region is chosen. elsewhere a region is chosen over a frozen screen (freeze.rs), also for one to draw
+ * takes a screenshot without waiting for it. a region is chosen over a frozen screen (freeze.rs), also for one to draw
  * on in satty, and a whole monitor is taken with grim
  */
 pub fn take(shot: Shot) {
-    match (running(), shot) {
-        (Compositor::Niri, Shot::Region) => amane::spawn("niri msg action screenshot"),
-        (Compositor::Niri, Shot::Screen) => amane::spawn("niri msg action screenshot-screen"),
-        (_, Shot::Screen) => {
+    match shot {
+        Shot::Screen => {
             std::thread::spawn(|| screen(focused_output()));
         }
-        (_, Shot::Region | Shot::Annotate) => crate::freeze::region(shot),
+        Shot::Region | Shot::Annotate => crate::freeze::region(shot),
     }
 }
 

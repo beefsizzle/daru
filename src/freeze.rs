@@ -15,11 +15,11 @@ use crate::theme::{alpha, theme};
 use crate::ui::label;
 
 /*
- * a region screenshot chosen over a frozen copy of the screen, as niri's own screenshot tool does, for the compositors
- * that have none (Umbriel). each monitor is grabbed with grim first and shown in an overlay window drawn by the
- * compositor from shared memory, like the wallpaper, so it costs no gpu memory. a second window on top draws the
- * selection, so moving it never redraws the picture. the screenshot is cropped out of the frozen picture, which is
- * exactly what was on screen when it was asked for, and has none of the selection's own drawing in it
+ * a region screenshot chosen over a frozen copy of the screen, which Umbriel has no tool of its own for. each monitor
+ * is grabbed with grim first and shown in an overlay window drawn by the compositor from shared memory, like the
+ * wallpaper, so it costs no gpu memory. a second window on top draws the selection, so moving it never redraws the
+ * picture. the screenshot is cropped out of the frozen picture, which is exactly what was on screen when it was asked
+ * for, and has none of the selection's own drawing in it
  */
 #[derive(Default)]
 pub struct Freeze {

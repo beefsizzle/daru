@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use amane::Service;
 
-use crate::compositor::{self, Compositor};
+use crate::compositor;
 use crate::focus::{json_string, objects};
 
 /*
@@ -63,7 +63,7 @@ impl Service for Layouts {
 
     // Umbriel sends the workspaces as they are first, then again on every change. started again if it restarts
     fn listen() {
-        if compositor::running() != Compositor::Umbriel {
+        if !compositor::umbriel() {
             return;
         }
 

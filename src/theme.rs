@@ -48,8 +48,9 @@ impl Theme {
      * window and lays that over the rest, while plain colours are drawn straight in. pictures (icons, thumbnails)
      * have no colour to fade, so they appear at once.
      *
-     * the panel's own background (and the bar's glass) stays as it is: niri's blur shows the wallpaper behind it
-     * (`xray`), not the window below, so a background that starts out clear flashes the wallpaper over that window
+     * the panel's own background (and the bar's glass) stays as it is: a compositor's blur can show the wallpaper
+     * behind it rather than the window below, so a background that starts out clear flashes the wallpaper over that
+     * window
      */
     pub fn faded(self, amount: f32) -> Theme {
         if amount >= 1.0 {
@@ -88,8 +89,8 @@ pub fn from_wallpaper() -> Theme {
 
 /*
  * every role has a fixed lightness, and the wallpaper only lends its hues (and some of its saturation). mixing the
- * wallpaper's own colours toward black and white made the bar's depth and contrast depend on the picture: a wallpaper
- * whose darkest colour is a mid grey gave a light bar with weak text. this way every wallpaper reads the same and
+ * wallpaper's own colours toward black and white makes the bar's depth and contrast depend on the picture: a wallpaper
+ * whose darkest colour is a mid grey gives a light bar with weak text. this way every wallpaper reads the same and
  * only the colour changes
  */
 const BACKGROUND: f32 = 0.075; // the glass and panels

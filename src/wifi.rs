@@ -1,7 +1,7 @@
 use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
 
-use amane::{AccessPoint, Bus, Network, Service, TextInput};
+use amane::{Bus, Network, Service, TextInput};
 
 /*
  * the Wi-Fi part of the network dropdown: which network asks for its password, which one is being joined, and
@@ -150,7 +150,7 @@ pub fn join(ssid: &str, password: Option<String>) {
 
 /// forgets a saved network, password and all
 pub fn forget(ssid: &str) {
-    forget_profile(ssid);
+    Network::forget(ssid);
 
     let mut wifi = Wifi::write();
 
@@ -228,7 +228,7 @@ fn watch(ssid: String, typed: bool) {
                 let retype = typed && refused;
 
                 if retype {
-                    forget_profile(&ssid);
+                    Network::forget(&ssid);
                 }
 
                 let mut wifi = Wifi::write();
@@ -286,25 +286,6 @@ fn listen_for_failures() {
 
 fn failure_since(started: Instant) -> Option<u32> {
     crate::sync::lock(&LAST_FAILURE).filter(|(at, _)| *at >= started).map(|(_, reason)| reason)
-}
-
-// ---------------------------------------------------------------- what the Amane fork adds
-
-// the upstream branch, built with stock Amane, has its own versions of these three
-
-/// connected and reaching the internet
-pub fn internet(network: &Network) -> bool {
-    network.internet()
-}
-
-/// deletes the saved profiles of a network, password and all
-pub fn forget_profile(ssid: &str) {
-    Network::forget(ssid);
-}
-
-/// a network that logs in with a username too (802.1X), which the panel can't join
-pub fn enterprise(point: &AccessPoint) -> bool {
-    point.enterprise()
 }
 
 #[cfg(test)]

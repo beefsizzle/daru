@@ -218,7 +218,7 @@ const WAITING_OPACITY: f32 = 0.001;
 
 /*
  * the wallpaper is drawn by the compositor (LayerWindow::picture): one buffer in shared memory for every monitor,
- * and no gpu memory of the shell's own. that was about 170 MB of swapchains and textures for two monitors. only while
+ * and no gpu memory of the shell's own, where drawing it would take about 170 MB for two monitors. only while
  * a new wallpaper fades in does the window draw with the gpu, and it gives that back afterwards.
  * no `.thumbnail()` here on purpose: Amane keeps small copies for good, and the file is already a screen-sized copy
  * (see wallpapers.rs)

@@ -11,10 +11,11 @@ use crate::theme::{Theme, alpha, mix};
 use crate::ui::{Wheel, chip, hover, icon, label, round_button, set_hover};
 
 /*
- * the clipboard history, kept by cliphist. two `wl-paste --watch cliphist store` processes (started by niri, see the
- * config) save everything that's copied, text and images, in a database that survives restarts and works while this
- * shell isn't running. wl-paste tells cliphist when a password manager marked the copy as secret, and cliphist skips
- * those. the shell only reads the list while the dropdown is open and asks cliphist to decode, delete and wipe
+ * the clipboard history, kept by cliphist. two `wl-paste --watch cliphist store` processes (started by the compositor,
+ * see umbriel/config.toml) save everything that's copied, text and images, in a database that survives restarts and
+ * works while this shell isn't running. wl-paste tells cliphist when a password manager marked the copy as secret, and
+ * cliphist skips those. the shell only reads the list while the dropdown is open and asks cliphist to decode, delete
+ * and wipe
  */
 #[derive(Clone, PartialEq)]
 pub struct Entry {

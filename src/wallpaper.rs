@@ -47,15 +47,6 @@ fn state_file() -> std::path::PathBuf {
 }
 
 fn initial() -> String {
-    // it used to be kept with the settings
-    crate::cache::move_from(&crate::cache::config_dir().join("wallpaper"), &state_file());
-
-    if let Ok(path) = std::env::var("AMANE_WALLPAPER")
-        && !path.is_empty()
-    {
-        return path;
-    }
-
     std::fs::read_to_string(state_file()).map(|text| text.trim().to_string()).unwrap_or_default()
 }
 

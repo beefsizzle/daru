@@ -148,7 +148,7 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
     let tray = Tray::read();
 
     // nothing to draw until the app has sent the menu that was asked for
-    let Some(entries) = tray.menu().filter(|shown| shown.item() == menu.item).map(|shown| shown.entries()) else {
+    let Some(entries) = tray.menu().filter(|shown| shown.item() == menu.item).map(amane::TrayMenu::entries) else {
         return panels::hidden("amane-panel");
     };
 
