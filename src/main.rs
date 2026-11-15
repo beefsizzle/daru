@@ -25,6 +25,7 @@ mod netpanel;
 mod panels;
 mod recolor;
 mod schemes;
+mod screensaver;
 mod power;
 mod profiles;
 mod sound;
@@ -76,6 +77,9 @@ fn main() {
 
     // starts listening for lock requests and suspend
     drop(logind::Logind::read());
+
+    // starts answering games and players that ask to keep the session awake
+    drop(screensaver::ScreenSaver::read());
 
     // starts noting the battery's charge once a minute, for its dropdown's graph and draw (see battery.rs)
     drop(battery::History::read());

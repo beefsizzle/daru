@@ -5,7 +5,8 @@ use crate::compositor;
 /*
  * what happens when you step away (App::idle, in main.rs): the session locks after LOCK and the screens go off after
  * SCREENS_OFF, both counted from the last input. a playing video holds both off, since the compositor tells the shell
- * nothing while something inhibits idle. turning the screens off is Umbriel's to do, so they stay on anywhere else
+ * nothing while something inhibits idle, and so does a game that asks over D-Bus (screensaver.rs). turning the screens
+ * off is Umbriel's to do, so they stay on anywhere else
  */
 pub const LOCK: Duration = Duration::from_secs(5 * 60);
 pub const SCREENS_OFF: Duration = Duration::from_secs(10 * 60);
