@@ -754,6 +754,17 @@ popover > contents {
 label.error {
     color: @daru_danger;
 }
+
+/* ReGreet sets these two on the widgets themselves: no border on the error bar's frame at the bottom, and none on
+   the top of the clock's, which sits against the screen's edge. as GTK's own gtk.css this file outranks that
+   (greetd/daru-greeter links it there, so the colours stay when a monitor goes away), so it says the same */
+overlay > box > frame, overlay > box > frame > border {
+    border: none;
+}
+
+overlay > frame:nth-child(3), overlay > frame:nth-child(3) > border {
+    border-top-width: 0;
+}
 "#;
 
 /*

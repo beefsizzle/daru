@@ -1,30 +1,99 @@
 #!/bin/sh
-# runs inside cage, which shows the greeter on the last monitor it found and draws every screen at scale 1. so first
-# the monitor in /etc/greetd/daru-output (greetd/install.sh --output) is turned on and the others off, then the scale
-# in /etc/greetd/daru-scale (--scale) is set, for a high-dpi laptop screen that would get a tiny login screen. then
-# ReGreet starts with the colours the shell wrote
-output="$(cat /etc/greetd/daru-output 2>/dev/null)"
+# runs inside cage, which stretches the greeter across every monitor it finds and draws each at scale 1. so first the
+# monitors are laid over one another, and then ReGreet starts with the colours the shell wrote.
+#
+# the main monitor is the one in /etc/greetd/daru-output (greetd/install.sh --output), or the first one found. it
+# shows the login screen whole, at the scale in /etc/greetd/daru-scale (--scale), for a high-dpi laptop screen that
+# would get a tiny one. every other monitor shows the same picture: it sits on top of the main one and is scaled until
+# it's no bigger, so a smaller or differently shaped one shows as much of the login screen as fits.
+#
+# no monitor is turned off. one that is can come back by itself (some reconnect as they go to standby), and cage then
+# moves the greeter over to it, which made ReGreet drop its colours and wallpaper
+main="$(cat /etc/greetd/daru-output 2>/dev/null)"
 scale="$(cat /etc/greetd/daru-scale 2>/dev/null || echo 1)"
 
+# every monitor's name, with whether it's on and where it sits, to tell when that changes. fails once cage is gone
+monitors() {
+    list="$(wlr-randr 2>/dev/null)" || return 1
+
+    printf '%s\n' "$list" | grep -E '^[^ ]|^  (Enabled|Position|Scale):' | sed 's/ .*"//'
+}
+
+arrange() {
+    names="$(wlr-randr | grep -v '^ ' | cut -d' ' -f1)"
+
+    # the one picked isn't plugged in
+    if ! printf '%s\n' "$names" | grep -qx "$main"; then
+        main="$(printf '%s\n' "$names" | head -n 1)"
+    fi
+
+    # its preferred mode when it has one
+    for each in $names; do
+        wlr-randr --output "$each" --on --preferred 2>/dev/null || wlr-randr --output "$each" --on
+    done
+
+    wlr-randr --output "$main" --pos 0,0 --scale "$scale"
+
+    [ "$names" = "$main" ] && return
+
+    # "name width height" of the mode each monitor is in now
+    sizes="$(wlr-randr | awk '
+        /^[^ ]/ { name = $1 }
+        / px, .*current/ { split($1, size, "x"); print name, size[1], size[2] }
+    ')"
+
+    main_size="$(printf '%s\n' "$sizes" | grep "^$main " | cut -d' ' -f2-)"
+
+    for each in $names; do
+        [ "$each" = "$main" ] && continue
+
+        size="$(printf '%s\n' "$sizes" | grep "^$each " | cut -d' ' -f2-)"
+
+        # one that doesn't say its size is still laid on top, at the scale it has
+        if [ -z "$size" ] || [ -z "$main_size" ]; then
+            wlr-randr --output "$each" --pos 0,0
+            continue
+        fi
+
+        # the larger of the two keeps it inside the main monitor on both sides, and rounding up keeps it from
+        # ending a pixel wider, which would stretch the login screen past the main monitor's edge
+        factor="$(echo "$size $main_size $scale" | awk '{
+            wide = $1 * $5 / $3
+            tall = $2 * $5 / $4
+            factor = wide > tall ? wide : tall
+            printf "%.4f", int(factor * 10000 + 0.9999) / 10000
+        }')"
+
+        wlr-randr --output "$each" --pos 0,0 --scale "$factor"
+    done
+}
+
 if command -v wlr-randr >/dev/null; then
-    outputs="$(wlr-randr | grep -v '^ ' | cut -d' ' -f1)"
+    arrange
 
-    # only when that monitor is plugged in and came on, so a missing one or a failed switch never leaves it dark. its
-    # preferred mode when it has one
-    if [ -n "$output" ] && printf '%s\n' "$outputs" | grep -qx "$output" &&
-        { wlr-randr --output "$output" --on --preferred || wlr-randr --output "$output" --on; }; then
-        for other in $outputs; do
-            [ "$other" = "$output" ] || wlr-randr --output "$other" --off
+    # a monitor that's switched on later, or one that reconnects, is put next to the others by cage, which splits the
+    # login screen across them. so they're laid out again whenever the list changes, until cage is gone
+    (
+        seen="$(monitors)"
+
+        while sleep 2; do
+            now="$(monitors)" || exit
+
+            if [ "$now" != "$seen" ]; then
+                arrange
+                seen="$(monitors)"
+            fi
         done
-
-        outputs="$output"
-    fi
-
-    if [ "$scale" != 1 ]; then
-        for each in $outputs; do
-            wlr-randr --output "$each" --scale "$scale"
-        done
-    fi
+    ) &
 fi
 
-exec regreet --style /var/lib/daru-greeter/regreet.css
+# ReGreet drops the stylesheet it's given whenever a monitor goes away, and the login screen turns grey. GTK loads
+# gtk-4.0/gtk.css from the config folder by itself and keeps it, so the same stylesheet is linked there as well
+style=/var/lib/daru-greeter/regreet.css
+config="${XDG_RUNTIME_DIR:-/tmp}/daru-greeter"
+
+if mkdir -p "$config/gtk-4.0" 2>/dev/null && ln -sf "$style" "$config/gtk-4.0/gtk.css" 2>/dev/null; then
+    export XDG_CONFIG_HOME="$config"
+fi
+
+exec regreet --style "$style"

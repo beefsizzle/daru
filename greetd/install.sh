@@ -4,8 +4,9 @@
 #
 # greetd starts cage, which shows ReGreet over the whole screen and is gone again once you're logged in, so nothing of
 # the login screen stays running in your session (SDDM keeps its X server for as long as you're logged in). --scale
-# is for a high-dpi screen, which cage would otherwise draw at scale 1. --output picks the monitor with more than one
-# plugged in, where cage takes the last one it finds (`wlr-randr` lists their names). both need wlr-randr.
+# is for a high-dpi screen, which cage would otherwise draw at scale 1. with more than one monitor plugged in, they
+# all show the login screen, and --output picks the main one, which the others are fitted to (`wlr-randr` lists their
+# names; the first one found when it isn't given). scaling and more than one monitor need wlr-randr.
 #
 # the greeter runs as its own user and can't read your home folder, so the shell copies the wallpaper and its colours
 # to /var/lib/daru-greeter, a folder this makes for you (add `regreet` to ~/.config/amane-shell/recolor). ReGreet's
@@ -95,9 +96,13 @@ for program in greetd cage regreet; do
     fi
 done
 
-if { [ "$scale" != 1 ] || [ -n "$output" ]; } && ! command -v wlr-randr >/dev/null; then
-    echo "--scale and --output need wlr-randr: sudo pacman -S wlr-randr"
-    exit 1
+if ! command -v wlr-randr >/dev/null; then
+    if [ "$scale" != 1 ] || [ -n "$output" ]; then
+        echo "--scale and --output need wlr-randr: sudo pacman -S wlr-randr"
+        exit 1
+    fi
+
+    echo "note: without wlr-randr a second monitor splits the login screen in two: sudo pacman -S wlr-randr"
 fi
 
 for file in config.toml regreet.toml daru-greeter; do
