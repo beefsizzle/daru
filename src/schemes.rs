@@ -110,16 +110,24 @@ impl Scheme {
             None => signals(accent, background, light),
         };
 
-        // chips and cards a step toward the text, as the wallpaper's are a step lighter than its background
-        let raised = |amount: f32| mix(background, fg, amount);
+        /*
+         * chips and cards stand out from the background as the wallpaper's do (see theme.rs). in the dark a step toward
+         * the text, and lighter again when hovered. in the light nearly white, since a darker chip vanishes on the bar
+         * over a dark wallpaper, and a step darker than the background when hovered
+         */
+        let (surface, surface_hi) = if light {
+            (mix(background, Color::rgb(0xff, 0xff, 0xff), 0.65), mix(background, fg, 0.04))
+        } else {
+            (mix(background, fg, 0.08), mix(background, fg, 0.15))
+        };
 
         let (glass, panel) = backgrounds(background, light);
 
         Some(Theme {
             glass,
             panel,
-            surface: alpha(raised(0.08), 0.80),
-            surface_hi: alpha(raised(0.15), 0.90),
+            surface: alpha(surface, 0.80),
+            surface_hi: alpha(surface_hi, 0.90),
             border: alpha(fg, 0.10),
             fg,
             dim: alpha(fg, 0.62),
@@ -268,7 +276,7 @@ pub fn mode_ipc(arguments: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{HUE_READS, SCHEMES, listed};
+    use super::{HUE_READS, READS, SCHEMES, listed};
     use crate::theme::{Theme, contrast};
 
     fn opaque(theme: &Theme) -> amane::Color {
@@ -305,6 +313,23 @@ mod tests {
 
             for hue in [theme.red, theme.yellow, theme.green, theme.blue, theme.purple, theme.orange] {
                 assert!(contrast(hue, background) >= HUE_READS, "{} hue {}", scheme.name, contrast(hue, background));
+            }
+
+            // chips lighter than the background, as the wallpaper's light ones are, and a hovered one a step darker
+            let lightness = |color: amane::Color| {
+                crate::theme::to_hsl(amane::Color::rgb(color.red(), color.green(), color.blue())).2
+            };
+
+            assert!(lightness(theme.surface) > lightness(background), "{} chips aren't lighter", scheme.name);
+            assert!(lightness(theme.surface_hi) < lightness(background), "{} hovered chips aren't darker", scheme.name);
+
+            // a hovered chip is darker than the background, so its text only has to read, not read as well
+            for (chip, least) in [(theme.surface, 7.0), (theme.surface_hi, READS)] {
+                let chip = amane::Color::rgb(chip.red(), chip.green(), chip.blue());
+
+                let reads = contrast(theme.fg, chip);
+
+                assert!(reads >= least, "{} text on a chip {reads}", scheme.name);
             }
         }
     }
