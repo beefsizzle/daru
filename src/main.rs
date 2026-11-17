@@ -110,6 +110,7 @@ fn main() {
         .ipc("toggle", panels::ipc)
         .ipc("wallpaper", wallpaper::ipc)
         .ipc("scheme", schemes::ipc)
+        .ipc("mode", schemes::mode_ipc)
         // `amane ipc call recolor` writes the colours for other apps again, after one was set up (greetd/install.sh)
         .ipc("recolor", |_| {
             recolor::export();

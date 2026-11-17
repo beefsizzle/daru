@@ -76,15 +76,27 @@ pub fn mix(a: Color, b: Color, t: f32) -> Color {
     )
 }
 
-/// the colours in use: a named scheme when one is picked (see schemes.rs), the wallpaper's otherwise
+/// the colours in use, dark or light (see schemes.rs for the mode): a named scheme when one is picked, the wallpaper's
+/// otherwise
 pub fn theme() -> Theme {
-    crate::schemes::chosen().map_or_else(from_wallpaper, crate::schemes::Scheme::theme)
+    themed(crate::schemes::light())
 }
 
-pub fn from_wallpaper() -> Theme {
+/// the dark colours whatever the mode, for the lock screen and the login screen: both lay their text over a dimmed
+/// wallpaper, which stays dark
+pub fn dark() -> Theme {
+    themed(false)
+}
+
+// a scheme with no light version of its own gives way to the wallpaper's colours while the mode is light
+pub fn themed(light: bool) -> Theme {
+    crate::schemes::chosen().and_then(|scheme| scheme.theme(light)).unwrap_or_else(|| from_wallpaper(light))
+}
+
+pub fn from_wallpaper(light: bool) -> Theme {
     let palette = Palette::read();
 
-    derive(palette.background(), palette.foreground(), palette.accent())
+    derive(palette.background(), palette.foreground(), palette.accent(), light)
 }
 
 /*
@@ -93,13 +105,37 @@ pub fn from_wallpaper() -> Theme {
  * whose darkest colour is a mid grey gives a light bar with weak text. this way every wallpaper reads the same and
  * only the colour changes
  */
-const BACKGROUND: f32 = 0.075; // the glass and panels
-const SURFACE: f32 = 0.15; // chips and cards
-const SURFACE_HI: f32 = 0.22; // the same, hovered
-const TEXT: f32 = 0.92;
-const ACCENT: f32 = 0.68; // bright enough to read as text on the background
-const ON_ACCENT: f32 = 0.12; // text on an accent fill
-const SIGNAL: f32 = 0.70; // red and yellow
+struct Tones {
+    background: f32, // the glass and panels
+    surface: f32,    // chips and cards
+    surface_hi: f32, // the same, hovered
+    text: f32,
+    accent: f32,    // read as text on the background
+    on_accent: f32, // text on an accent fill
+    signal: f32,    // red and yellow
+    glass: f32,     // how solid the bar's glass is over the blur, and a panel
+    panel: f32,
+}
+
+const DARK: Tones = Tones { background: 0.075, surface: 0.15, surface_hi: 0.22, text: 0.92, accent: 0.68, on_accent: 0.12, signal: 0.70, glass: 0.62, panel: 0.78 };
+
+/*
+ * the light mode: a soft grey like a macOS or Windows 11 window rather than white, with nearly white chips, as
+ * Windows has its cards. chips darker than the panels were tried first and vanished on the bar: what shows through
+ * the glass pulls it down to their lightness when the wallpaper is dark. lighter ones stand out on the bar whatever
+ * is behind it. a hovered chip is a step darker, where the dark mode's is a step lighter. the glass is more solid
+ * than the dark one, or a dark wallpaper turns the bar a muddy mid grey.
+ *
+ * the accent and the signal colours only start at their lightness here: a yellow has to be far darker than a blue to
+ * read on a light background, so each is darkened until it does (see `readable`) on LIGHT_UNDER, about the darkest
+ * they're written on: the bar's glass with a dark wallpaper behind it
+ */
+const LIGHT: Tones = Tones { background: 0.93, surface: 0.975, surface_hi: 0.915, text: 0.10, accent: 0.45, on_accent: 0.97, signal: 0.45, glass: 0.88, panel: 0.92 };
+
+const LIGHT_UNDER: f32 = 0.86;
+
+/// the least contrast text needs to read (WCAG's AA), which light colours are darkened to
+pub const READS: f32 = 4.5;
 
 // a hue is only kept when there's colour to keep: a grey has none, and its hue would turn it red
 const GREY: f32 = 0.08;
@@ -115,26 +151,34 @@ pub const SEEDS: [Color; 6] = [
     Color::rgb(0xff, 0x9e, 0x64),
 ];
 
-pub fn derive(background: Color, foreground: Color, accent: Color) -> Theme {
+pub fn derive(background: Color, foreground: Color, accent: Color, light: bool) -> Theme {
+    let tones = if light { &LIGHT } else { &DARK };
+
     let base = |lightness: f32| relit(background, lightness, 0.0, 0.35);
 
-    let fg = relit(foreground, TEXT, 0.0, 0.12);
-    let accent_color = relit(accent, ACCENT, 0.45, 0.82);
+    let fg = relit(foreground, tones.text, 0.0, 0.12);
 
-    let [red, yellow, green, blue, purple, orange] = SEEDS.map(|seed| signal(seed, accent_color));
+    // a light accent and the signal colours read on the darkest thing they're written on
+    let under = base(LIGHT_UNDER);
+    let lit = relit(accent, tones.accent, 0.45, 0.82);
+    let accent_color = if light { readable(lit, under, READS) } else { lit };
+
+    let [red, yellow, green, blue, purple, orange] = signals(accent_color, under, light);
+
+    let (glass, panel) = backgrounds(base(tones.background), light);
 
     Theme {
-        glass: alpha(base(BACKGROUND), 0.62),
-        panel: alpha(base(BACKGROUND), 0.78),
-        surface: alpha(base(SURFACE), 0.80),
-        surface_hi: alpha(base(SURFACE_HI), 0.90),
+        glass,
+        panel,
+        surface: alpha(base(tones.surface), 0.80),
+        surface_hi: alpha(base(tones.surface_hi), 0.90),
         border: alpha(fg, 0.10),
         fg,
         dim: alpha(fg, 0.62),
         faint: alpha(fg, 0.38),
         accent: accent_color,
         accent_soft: alpha(accent_color, 0.22),
-        on_accent: relit(accent, ON_ACCENT, 0.0, 0.50),
+        on_accent: relit(accent, tones.on_accent, 0.0, 0.50),
         red,
         yellow,
         green,
@@ -144,10 +188,59 @@ pub fn derive(background: Color, foreground: Color, accent: Color) -> Theme {
     }
 }
 
-/// a signal colour (warnings, or syntax colours for other apps) from a seed hue, leaning a little toward the accent and
-/// as light as the red and yellow, so it reads on the background
-pub fn signal(seed: Color, accent: Color) -> Color {
-    relit(mix(seed, accent, 0.20), SIGNAL, 0.48, 0.82)
+/// the bar's glass and a panel's background in this colour, as see-through as the mode has them
+pub fn backgrounds(color: Color, light: bool) -> (Color, Color) {
+    let tones = if light { &LIGHT } else { &DARK };
+
+    (alpha(color, tones.glass), alpha(color, tones.panel))
+}
+
+/// the six signal colours (warnings, or syntax colours for other apps): the seed hues, leaning a little toward the
+/// accent. on a dark background they're as light as the red and yellow; on a light one they're darkened until they
+/// read on `background`
+pub fn signals(accent: Color, background: Color, light: bool) -> [Color; 6] {
+    let tones = if light { &LIGHT } else { &DARK };
+
+    SEEDS.map(|seed| {
+        let color = relit(mix(seed, accent, 0.20), tones.signal, 0.48, 0.82);
+
+        if light { readable(color, background, READS) } else { color }
+    })
+}
+
+/// the colour with its lightness moved away from `against`'s, a little at a time, until the two are `least` apart in
+/// contrast: darker on a light background, lighter on a dark one. a colour that already reads comes back untouched
+pub fn readable(color: Color, against: Color, least: f32) -> Color {
+    let (hue, saturation, mut lightness) = to_hsl(color);
+
+    let step = if to_hsl(against).2 > 0.5 { -0.02 } else { 0.02 };
+
+    let mut result = color;
+
+    while contrast(result, against) < least && (0.02..=0.98).contains(&lightness) {
+        lightness += step;
+
+        result = from_hsl(hue, saturation, lightness);
+    }
+
+    result
+}
+
+/// WCAG contrast between two opaque colours, from 1 (the same) to 21 (black on white)
+pub fn contrast(a: Color, b: Color) -> f32 {
+    let luminance = |color: Color| {
+        let linear = |channel: u8| {
+            let value = f32::from(channel) / 255.0;
+
+            if value <= 0.04045 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
+        };
+
+        0.2126 * linear(color.red()) + 0.7152 * linear(color.green()) + 0.0722 * linear(color.blue())
+    };
+
+    let (light, dark) = (luminance(a).max(luminance(b)), luminance(a).min(luminance(b)));
+
+    (light + 0.05) / (dark + 0.05)
 }
 
 /// a translucent colour as it looks laid over `under`, for apps that want solid colours
@@ -217,24 +310,7 @@ fn from_hsl(hue: f32, saturation: f32, lightness: f32) -> Color {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{BACKGROUND, Color, derive, from_hsl, to_hsl};
-
-    // WCAG contrast between two opaque colours
-    pub fn contrast(a: Color, b: Color) -> f32 {
-        let luminance = |color: Color| {
-            let linear = |channel: u8| {
-                let value = f32::from(channel) / 255.0;
-
-                if value <= 0.04045 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
-            };
-
-            0.2126 * linear(color.red()) + 0.7152 * linear(color.green()) + 0.0722 * linear(color.blue())
-        };
-
-        let (light, dark) = (luminance(a).max(luminance(b)), luminance(a).min(luminance(b)));
-
-        (light + 0.05) / (dark + 0.05)
-    }
+    use super::{Color, DARK, LIGHT, READS, contrast, derive, from_hsl, readable, to_hsl};
 
     fn opaque(color: Color) -> Color {
         Color::rgb(color.red(), color.green(), color.blue())
@@ -262,17 +338,19 @@ pub mod tests {
 
     #[test]
     fn every_wallpaper_gets_the_same_depth() {
-        for (background, foreground, accent) in WALLPAPERS {
-            let (_, _, lightness) = to_hsl(opaque(derive(background, foreground, accent).panel));
+        for (light, tones) in [(false, &DARK), (true, &LIGHT)] {
+            for (background, foreground, accent) in WALLPAPERS {
+                let (_, _, lightness) = to_hsl(opaque(derive(background, foreground, accent, light).panel));
 
-            assert!((lightness - BACKGROUND).abs() < 0.01, "panel lightness {lightness}");
+                assert!((lightness - tones.background).abs() < 0.01, "panel lightness {lightness}");
+            }
         }
     }
 
     #[test]
     fn text_and_accent_read_on_every_wallpaper() {
         for (background, foreground, accent) in WALLPAPERS {
-            let theme = derive(background, foreground, accent);
+            let theme = derive(background, foreground, accent, false);
             let panel = opaque(theme.panel);
 
             assert!(contrast(theme.fg, panel) >= 12.0, "text contrast {}", contrast(theme.fg, panel));
@@ -282,9 +360,50 @@ pub mod tests {
         }
     }
 
+    // the light mode reads as well: on the panel, and on the chips at rest and hovered
+    #[test]
+    fn the_light_mode_reads_on_every_wallpaper() {
+        for (background, foreground, accent) in WALLPAPERS {
+            let theme = derive(background, foreground, accent, true);
+
+            for under in [opaque(theme.panel), opaque(theme.surface), opaque(theme.surface_hi)] {
+                assert!(contrast(theme.fg, under) >= 12.0, "text contrast {}", contrast(theme.fg, under));
+                assert!(contrast(theme.accent, under) >= READS, "accent contrast {}", contrast(theme.accent, under));
+
+                for signal in [theme.red, theme.yellow, theme.green, theme.blue, theme.purple, theme.orange] {
+                    assert!(contrast(signal, under) >= READS, "signal contrast {}", contrast(signal, under));
+                }
+            }
+
+            assert!(contrast(theme.on_accent, theme.accent) >= READS, "on-accent contrast {}", contrast(theme.on_accent, theme.accent));
+        }
+    }
+
+    #[test]
+    fn a_colour_that_reads_is_left_alone() {
+        let white = Color::rgb(0xff, 0xff, 0xff);
+        let navy = Color::rgb(0x10, 0x20, 0x60);
+        let yellow = Color::rgb(0xf0, 0xd0, 0x30);
+
+        assert_eq!(readable(navy, white, READS), navy);
+
+        let darkened = readable(yellow, white, READS);
+
+        assert!(contrast(darkened, white) >= READS);
+
+        // still a yellow, only darker
+        assert!((to_hsl(darkened).0 - to_hsl(yellow).0).abs() < 2.0);
+        assert!(to_hsl(darkened).2 < to_hsl(yellow).2);
+
+        // and lightened on a dark background
+        let black = Color::rgb(0, 0, 0);
+
+        assert!(to_hsl(readable(navy, black, READS)).2 > to_hsl(navy).2);
+    }
+
     #[test]
     fn fading_scales_every_colour() {
-        let theme = derive(WALLPAPERS[0].0, WALLPAPERS[0].1, WALLPAPERS[0].2);
+        let theme = derive(WALLPAPERS[0].0, WALLPAPERS[0].1, WALLPAPERS[0].2, false);
         let half = theme.faded(0.5);
 
         assert_eq!(half.fg.alpha(), 128);
@@ -298,9 +417,11 @@ pub mod tests {
 
     #[test]
     fn a_grey_wallpaper_stays_grey() {
-        let theme = derive(Color::rgb(0x50, 0x50, 0x50), Color::rgb(0xdd, 0xdd, 0xdd), Color::rgb(0x99, 0x99, 0x99));
-        let panel = opaque(theme.panel);
+        for light in [false, true] {
+            let theme = derive(Color::rgb(0x50, 0x50, 0x50), Color::rgb(0xdd, 0xdd, 0xdd), Color::rgb(0x99, 0x99, 0x99), light);
+            let panel = opaque(theme.panel);
 
-        assert!(panel.red() == panel.green() && panel.green() == panel.blue(), "{panel:?}");
+            assert!(panel.red() == panel.green() && panel.green() == panel.blue(), "{panel:?}");
+        }
     }
 }

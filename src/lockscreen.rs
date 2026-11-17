@@ -4,7 +4,7 @@ use amane::{
 };
 
 use crate::clock::Clock;
-use crate::theme::{alpha, theme};
+use crate::theme::{alpha, dark};
 use crate::ui::{bold, icon, label};
 use crate::wallpaper::Wallpaper;
 
@@ -12,7 +12,8 @@ use crate::wallpaper::Wallpaper;
 // fingerprint unlocks it too while the password field stays usable (see `Lock::use_fingerprint` in main.rs)
 
 pub fn view(_: &Monitor) -> LayerWindow {
-    let t = theme();
+    // the dark colours whatever the mode: the text here lies on the dimmed wallpaper, not on a panel
+    let t = dark();
     let lock = Lock::read();
     let clock = Clock::read();
 

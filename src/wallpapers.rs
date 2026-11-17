@@ -6,7 +6,7 @@ use amane::{
 };
 
 use crate::panels::{self, Which};
-use crate::schemes::{self, SCHEMES};
+use crate::schemes;
 use crate::theme::{self, Theme, alpha};
 use crate::ui::{Wheel, bold, hover, label, section, set_hover};
 use crate::wallpaper::Wallpaper;
@@ -21,7 +21,7 @@ pub struct Wallpapers {
     // wallpaper -> its finished thumbnail. checked once here, so drawing the strip touches no files
     pub ready: HashMap<String, String>,
     pub selected: usize,
-    pub scheme: usize, // the scheme chosen in the picker: 0 for the wallpaper's colours, then `SCHEMES` in order
+    pub scheme: usize, // the scheme chosen in the picker: 0 for the wallpaper's colours, then the mode's schemes in order
     pub focus: Focus,  // which row the keys move
     wheel: Wheel,      // moves the selection
     scheme_wheel: Wheel,
@@ -370,7 +370,7 @@ impl Wallpapers {
 
         self.selected = self.files.iter().position(|path| *path == current).unwrap_or(0);
 
-        self.scheme = schemes::chosen().and_then(|chosen| SCHEMES.iter().position(|scheme| scheme.name == chosen.name)).map_or(0, |index| index + 1);
+        self.scheme = scheme_in_use();
 
         self.focus = Focus::Wallpapers;
     }
@@ -387,7 +387,7 @@ impl Wallpapers {
 
     // the schemes are a list with two ends, not a loop like the wallpapers
     fn step_scheme(&mut self, by: isize) {
-        self.scheme = (self.scheme as isize).saturating_add(by).clamp(0, SCHEMES.len() as isize) as usize;
+        self.scheme = (self.scheme as isize).saturating_add(by).clamp(0, schemes::listed(schemes::light()).len() as isize) as usize;
     }
 
     fn step_focused(&mut self, by: isize) {
@@ -438,16 +438,34 @@ const FRAME: f32 = 5.0;
 // the bar along the bottom of the wallpaper and the scheme in use
 const IN_USE: f32 = 3.0;
 
+// each half of the dark or light switch, at the end of the colours' header
+const SWITCH: (f32, f32) = (56.0, 20.0);
+
 const HEIGHT: f32 =
-    PAD + HEADER + 12.0 + THUMB.1 + 2.0 * FRAME + 18.0 + 1.0 + 18.0 + HEADER + 12.0 + SWATCH.1 + 2.0 * FRAME + PAD;
+    PAD + HEADER + 12.0 + THUMB.1 + 2.0 * FRAME + 18.0 + 1.0 + 18.0 + SWITCH.1 + 12.0 + SWATCH.1 + 2.0 * FRAME + PAD;
 
 fn pick(path: String) {
     crate::wallpaper::apply(&path);
 }
 
-// 0 is the wallpaper's own colours, then the schemes in order
+// 0 is the wallpaper's own colours, then the mode's schemes in order
 fn pick_scheme(index: usize) {
-    schemes::choose(index.checked_sub(1).and_then(|index| SCHEMES.get(index)));
+    schemes::choose(index.checked_sub(1).and_then(|index| schemes::listed(schemes::light()).get(index).copied()));
+}
+
+// where the colours showing now are in the row: 0 for the wallpaper's, also while a scheme with no light version
+// waits for the dark mode to come back
+fn scheme_in_use() -> usize {
+    let listed = schemes::listed(schemes::light());
+
+    schemes::in_use().and_then(|in_use| listed.iter().position(|scheme| scheme.name == in_use.name)).map_or(0, |index| index + 1)
+}
+
+// the light mode lists fewer schemes, so the selection goes back to the one in use
+fn set_mode(light: bool) {
+    schemes::set_light(light);
+
+    Wallpapers::write().scheme = scheme_in_use();
 }
 
 fn on_key(key: Key) {
@@ -464,6 +482,7 @@ fn on_key(key: Key) {
         }
         Key::Left | Key::Character('h') => Wallpapers::write().step_focused(-1),
         Key::Right | Key::Character('l') => Wallpapers::write().step_focused(1),
+        Key::Character('m') => set_mode(!schemes::light()),
         Key::Home => Wallpapers::write().step_focused(isize::MIN / 2),
         Key::End => Wallpapers::write().step_focused(isize::MAX / 2),
         Key::Enter | Key::Space => {
@@ -638,25 +657,52 @@ fn swatch(t: &Theme, index: usize, name: &str, colors: &Theme, in_use: bool, sel
     })
 }
 
+// the dark or light switch: the mode in use filled with the accent, the other a click (or `m`) away
+fn mode_switch(t: &Theme) -> Row {
+    let light = schemes::light();
+
+    let half = |name: &'static str, to_light: bool| {
+        let on = light == to_light;
+
+        Rectangle::new()
+            .width(SWITCH.0)
+            .height(SWITCH.1)
+            .fill(if on { t.accent } else { t.surface })
+            .align_child(Center, Center)
+            .cursor(amane::Pointer)
+            .on_click(move |_| set_mode(to_light))
+            .child(label(name, 11.5, if on { t.on_accent } else { t.dim }))
+    };
+
+    Row::new(children![half("Dark", false), half("Light", true)])
+}
+
 fn swatches(t: &Theme, wallpapers: &Wallpapers, width: f32) -> Rectangle {
-    let total = SCHEMES.len() + 1;
+    let light = schemes::light();
+    let listed = schemes::listed(light);
+
+    let total = listed.len() + 1;
+
+    // the selection can be past the end for a moment, when the mode has just changed to the shorter list
+    let selected = wallpapers.scheme.min(total - 1);
 
     // as many as fit, sliding along so the selected one is always among them
     let fit = (((width + SWATCH_GAP) / (SWATCH.0 + 2.0 * FRAME + SWATCH_GAP)).floor() as usize).clamp(1, total);
-    let first = wallpapers.scheme.saturating_sub(fit / 2).min(total - fit);
+    let first = selected.saturating_sub(fit / 2).min(total - fit);
 
-    let in_use = schemes::chosen().map_or(0, |chosen| SCHEMES.iter().position(|scheme| scheme.name == chosen.name).map_or(0, |index| index + 1));
+    let in_use = scheme_in_use();
     let focused = wallpapers.focus == Focus::Schemes;
 
     let mut items: Vec<Box<dyn Widget>> = Vec::new();
 
     for index in first..first + fit {
-        let (name, colors) = match index.checked_sub(1).and_then(|index| SCHEMES.get(index)) {
-            Some(scheme) => (scheme.name, scheme.theme()),
-            None => ("Wallpaper", theme::from_wallpaper()),
+        // every listed scheme has the mode's colours, so the wallpaper's only stand in for one that doesn't
+        let (name, colors) = match index.checked_sub(1).and_then(|index| listed.get(index)) {
+            Some(scheme) => (scheme.name, scheme.theme(light).unwrap_or_else(|| theme::from_wallpaper(light))),
+            None => ("Wallpaper", theme::from_wallpaper(light)),
         };
 
-        items.push(Box::new(swatch(t, index, name, &colors, index == in_use, index == wallpapers.scheme, focused)));
+        items.push(Box::new(swatch(t, index, name, &colors, index == in_use, index == selected, focused)));
     }
 
     Rectangle::new()
@@ -700,15 +746,25 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         .map(|file| file.rsplit_once('.').map_or(file, |(stem, _)| stem).to_string())
         .unwrap_or_default();
 
-    let scheme_name = wallpapers.scheme.checked_sub(1).and_then(|index| SCHEMES.get(index)).map_or("Wallpaper", |scheme| scheme.name);
+    let scheme_name = wallpapers
+        .scheme
+        .checked_sub(1)
+        .and_then(|index| schemes::listed(schemes::light()).get(index).copied())
+        .map_or("Wallpaper", |scheme| scheme.name);
 
     let top = Row::new(children![
         header(&t, "Wallpaper", wallpapers.focus == Focus::Wallpapers, name, (count > 0).then(|| format!("{} / {count}", wallpapers.selected + 1))),
-        label("\u{2190} \u{2192} choose     \u{2191} \u{2193} wallpaper or colours     enter apply     esc close", 11.5, t.faint),
+        label("\u{2190} \u{2192} choose     \u{2191} \u{2193} wallpaper or colours     enter apply     m light or dark     esc close", 11.5, t.faint),
     ])
     .justify(SpaceBetween)
     .align(Center)
     .width(width);
+
+    let colours = Row::new(children![header(&t, "Colours", wallpapers.focus == Focus::Schemes, scheme_name.to_string(), None), mode_switch(&t)])
+        .justify(SpaceBetween)
+        .align(Center)
+        .width(width)
+        .height(SWITCH.1);
 
     let content = Column::new(children![
         top,
@@ -717,7 +773,7 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         Rectangle::new().width(width).height(18.0),
         Rectangle::new().width(width).height(1.0).fill(t.border),
         Rectangle::new().width(width).height(18.0),
-        header(&t, "Colours", wallpapers.focus == Focus::Schemes, scheme_name.to_string(), None),
+        colours,
         Rectangle::new().width(width).height(12.0),
         swatches(&t, &wallpapers, width),
     ]);

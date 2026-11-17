@@ -1,15 +1,26 @@
 use amane::{Color, Service};
 
-use crate::theme::{SEEDS, Theme, alpha, mix, signal};
+use crate::theme::{READS, Theme, alpha, backgrounds, mix, readable, signals};
 
 /*
  * named colour schemes, picked in the wallpaper picker, which replace the colours the shell takes from the wallpaper
  * until "Wallpaper" is picked again. unlike the wallpaper's colours, which only lend their hues to fixed lightnesses
  * (see theme::derive), a scheme is drawn with its own colours, so Nord looks like Nord. the choice is kept in
- * ~/.local/state/amane-shell/scheme, and `amane ipc call scheme <name>|wallpaper` picks one from a keybind
+ * ~/.local/state/amane-shell/scheme, and `amane ipc call scheme <name>|wallpaper` picks one from a keybind.
+ *
+ * the mode, dark or light, is kept next to it (`mode`, and `amane ipc call mode light|dark|toggle`). the wallpaper's
+ * colours have a light side made the same way as the dark one. a scheme is light only where it has a light version of
+ * its own, like Catppuccin's Latte: the others are dark by design, so while the mode is light they aren't listed, and
+ * one of them that was picked gives way to the wallpaper's colours until the mode is dark again
  */
 pub struct Scheme {
     pub name: &'static str,
+    dark: Shades,
+    light: Option<Shades>,
+}
+
+#[derive(Clone, Copy)]
+struct Shades {
     background: Color,
     foreground: Color,
     accent: Color,
@@ -23,50 +34,90 @@ const fn hex(value: u32) -> Color {
 }
 
 const fn scheme(name: &'static str, background: u32, foreground: u32, accent: u32) -> Scheme {
-    Scheme { name, background: hex(background), foreground: hex(foreground), accent: hex(accent), hues: None }
+    Scheme { name, dark: Shades { background: hex(background), foreground: hex(foreground), accent: hex(accent), hues: None }, light: None }
 }
 
-const fn full(name: &'static str, background: u32, foreground: u32, accent: u32, hues: [u32; 6]) -> Scheme {
+const fn hues(hues: [u32; 6]) -> Option<[Color; 6]> {
     let [red, yellow, green, blue, purple, orange] = hues;
 
-    Scheme {
-        name,
-        background: hex(background),
-        foreground: hex(foreground),
-        accent: hex(accent),
-        hues: Some([hex(red), hex(yellow), hex(green), hex(blue), hex(purple), hex(orange)]),
+    Some([hex(red), hex(yellow), hex(green), hex(blue), hex(purple), hex(orange)])
+}
+
+const fn full(name: &'static str, background: u32, foreground: u32, accent: u32, own: [u32; 6]) -> Scheme {
+    Scheme { name, dark: Shades { background: hex(background), foreground: hex(foreground), accent: hex(accent), hues: hues(own) }, light: None }
+}
+
+impl Scheme {
+    // the scheme's own light version, in the same order as the dark one
+    const fn light(self, background: u32, foreground: u32, accent: u32, own: [u32; 6]) -> Scheme {
+        Scheme {
+            name: self.name,
+            dark: self.dark,
+            light: Some(Shades { background: hex(background), foreground: hex(foreground), accent: hex(accent), hues: hues(own) }),
+        }
     }
 }
 
+// the light versions are Catppuccin Latte, Everforest Light (medium), Nord's Snow Storm with its darker blue as the
+// accent, and Tokyo Night Day
 pub const SCHEMES: &[Scheme] = &[
     scheme("Amberbyte", 0x1a1313, 0xede3e3, 0xd9636b),
     scheme("Anonymous", 0x050505, 0xe6e7e7, 0xd4d4d4),
     scheme("Ash", 0x1c1c1c, 0xc4c6c5, 0xa9abaa),
     scheme("Atari", 0x272027, 0xd6d0cc, 0x9fd1b8),
     scheme("Black Gold", 0x0e0e0c, 0xdfdcd0, 0xdeb953),
-    full("Catppuccin", 0x1e1e2e, 0xcdd6f4, 0xcba6f7, [0xf38ba8, 0xf9e2af, 0xa6e3a1, 0x89b4fa, 0xf5c2e7, 0xfab387]),
+    full("Catppuccin", 0x1e1e2e, 0xcdd6f4, 0xcba6f7, [0xf38ba8, 0xf9e2af, 0xa6e3a1, 0x89b4fa, 0xf5c2e7, 0xfab387])
+        .light(0xeff1f5, 0x4c4f69, 0x8839ef, [0xd20f39, 0xdf8e1d, 0x40a02b, 0x1e66f5, 0xea76cb, 0xfe640b]),
     scheme("Ember & Ash", 0x1c1c1c, 0xd8cfc8, 0xe0896f),
-    full("Everforest", 0x2d353b, 0xd3c6aa, 0xa7c080, [0xe67e80, 0xdbbc7f, 0xa7c080, 0x7fbbb3, 0xd699b6, 0xe69875]),
+    full("Everforest", 0x2d353b, 0xd3c6aa, 0xa7c080, [0xe67e80, 0xdbbc7f, 0xa7c080, 0x7fbbb3, 0xd699b6, 0xe69875])
+        .light(0xfdf6e3, 0x5c6a72, 0x8da101, [0xf85552, 0xdfa000, 0x8da101, 0x3a94c5, 0xdf69ba, 0xf57d26]),
     scheme("Koyanagi", 0x161616, 0xc8c8c8, 0xd4b970),
     scheme("Lifeless", 0x1f3236, 0xd8deda, 0x53bea3),
     scheme("Lumon", 0x0c1c2c, 0xbcd4dc, 0xa8d8ec),
     scheme("Matte Black", 0x121212, 0xbebebe, 0xe8a030),
-    full("Nord", 0x2e3440, 0xd8dee9, 0x88c0d0, [0xbf616a, 0xebcb8b, 0xa3be8c, 0x81a1c1, 0xb48ead, 0xd08770]),
-    full("Tokyo Night", 0x1a1b26, 0xc0caf5, 0x7aa2f7, [0xf7768e, 0xe0af68, 0x9ece6a, 0x7aa2f7, 0xbb9af7, 0xff9e64]),
+    full("Nord", 0x2e3440, 0xd8dee9, 0x88c0d0, [0xbf616a, 0xebcb8b, 0xa3be8c, 0x81a1c1, 0xb48ead, 0xd08770])
+        .light(0xeceff4, 0x2e3440, 0x5e81ac, [0xbf616a, 0xebcb8b, 0xa3be8c, 0x5e81ac, 0xb48ead, 0xd08770]),
+    full("Tokyo Night", 0x1a1b26, 0xc0caf5, 0x7aa2f7, [0xf7768e, 0xe0af68, 0x9ece6a, 0x7aa2f7, 0xbb9af7, 0xff9e64])
+        .light(0xe1e2e7, 0x3760bf, 0x2e7de9, [0xf52a65, 0x8c6c3e, 0x587539, 0x2e7de9, 0x9854f1, 0xb15c00]),
 ];
 
-impl Scheme {
-    pub fn theme(&self) -> Theme {
-        let (background, fg, accent) = (self.background, self.foreground, self.accent);
+// what a light version's text is darkened to where its own doesn't reach it, and its signal colours, which are read as
+// dots, borders and short warnings rather than as running text (WCAG's AAA for text, and its least for graphics)
+const TEXT_READS: f32 = 7.0;
+const HUE_READS: f32 = 3.0;
 
-        let [red, yellow, green, blue, purple, orange] = self.hues.unwrap_or_else(|| SEEDS.map(|seed| signal(seed, accent)));
+impl Scheme {
+    /// the scheme's colours, dark or light. None for a light version it doesn't have
+    pub fn theme(&self, light: bool) -> Option<Theme> {
+        let shades = if light { self.light.as_ref()? } else { &self.dark };
+
+        let background = shades.background;
+
+        /*
+         * a light version keeps its own colours wherever they read. some don't: Everforest's text and green are pale
+         * on purpose, and no yellow reads on a light background. those are darkened, hue kept, until they do. the
+         * dark versions are drawn as they are
+         */
+        let (fg, accent) = if light {
+            (readable(shades.foreground, background, TEXT_READS), readable(shades.accent, background, READS))
+        } else {
+            (shades.foreground, shades.accent)
+        };
+
+        let [red, yellow, green, blue, purple, orange] = match shades.hues {
+            Some(own) if light => own.map(|hue| readable(hue, background, HUE_READS)),
+            Some(own) => own,
+            None => signals(accent, background, light),
+        };
 
         // chips and cards a step toward the text, as the wallpaper's are a step lighter than its background
         let raised = |amount: f32| mix(background, fg, amount);
 
-        Theme {
-            glass: alpha(background, 0.62),
-            panel: alpha(background, 0.78),
+        let (glass, panel) = backgrounds(background, light);
+
+        Some(Theme {
+            glass,
+            panel,
             surface: alpha(raised(0.08), 0.80),
             surface_hi: alpha(raised(0.15), 0.90),
             border: alpha(fg, 0.10),
@@ -82,7 +133,7 @@ impl Scheme {
             blue,
             purple,
             orange,
-        }
+        })
     }
 }
 
@@ -90,20 +141,37 @@ pub fn named(name: &str) -> Option<&'static Scheme> {
     SCHEMES.iter().find(|scheme| scheme.name.eq_ignore_ascii_case(name))
 }
 
-// the scheme in use, None for the wallpaper's colours
-pub struct Chosen {
-    pub scheme: Option<&'static Scheme>,
+/// the schemes the mode has: all of them when dark, the ones with a light version when light
+pub fn listed(light: bool) -> Vec<&'static Scheme> {
+    SCHEMES.iter().filter(|scheme| !light || scheme.light.is_some()).collect()
 }
 
-fn state_file() -> std::path::PathBuf {
-    crate::cache::state_dir().join("scheme")
+// the scheme picked, None for the wallpaper's colours, and the mode
+pub struct Chosen {
+    pub scheme: Option<&'static Scheme>,
+    pub light: bool,
+}
+
+fn state_file(name: &str) -> std::path::PathBuf {
+    crate::cache::state_dir().join(name)
+}
+
+// a failed write only means it won't survive a restart
+fn remember(name: &str, value: &str) {
+    let file = state_file(name);
+
+    if let Some(folder) = file.parent() {
+        let _ = std::fs::create_dir_all(folder);
+    }
+
+    let _ = std::fs::write(file, value);
 }
 
 impl Service for Chosen {
     fn new() -> Self {
-        let name = std::fs::read_to_string(state_file()).unwrap_or_default();
+        let read = |name: &str| std::fs::read_to_string(state_file(name)).unwrap_or_default();
 
-        Self { scheme: named(name.trim()) }
+        Self { scheme: named(read("scheme").trim()), light: read("mode").trim() == "light" }
     }
 
     // it only changes when one is picked
@@ -112,6 +180,17 @@ impl Service for Chosen {
 
 pub fn chosen() -> Option<&'static Scheme> {
     Chosen::read().scheme
+}
+
+pub fn light() -> bool {
+    Chosen::read().light
+}
+
+/// the scheme whose colours are showing: the one picked, unless the mode is light and it has no light version
+pub fn in_use() -> Option<&'static Scheme> {
+    let chosen = Chosen::read();
+
+    chosen.scheme.filter(|scheme| !chosen.light || scheme.light.is_some())
 }
 
 /// picks a scheme, or the wallpaper's colours for None, remembers it for the next start, and recolours other apps
@@ -126,14 +205,24 @@ pub fn choose(scheme: Option<&'static Scheme>) {
         chosen.scheme = scheme;
     }
 
-    // a failed write only means it won't survive a restart
-    let file = state_file();
+    remember("scheme", scheme.map_or("", |scheme| scheme.name));
 
-    if let Some(folder) = file.parent() {
-        let _ = std::fs::create_dir_all(folder);
+    crate::recolor::export();
+}
+
+/// switches between the dark and the light colours, remembers it for the next start, and recolours other apps
+pub fn set_light(light: bool) {
+    {
+        let mut chosen = Chosen::write();
+
+        if chosen.light == light {
+            return;
+        }
+
+        chosen.light = light;
     }
 
-    let _ = std::fs::write(file, scheme.map_or("", |scheme| scheme.name));
+    remember("mode", if light { "light" } else { "dark" });
 
     crate::recolor::export();
 }
@@ -164,20 +253,73 @@ pub fn ipc(arguments: &[String]) -> String {
     }
 }
 
+/// `amane ipc call mode light`, `mode dark`, `mode toggle`, or `mode` to ask which it is
+pub fn mode_ipc(arguments: &[String]) -> String {
+    match arguments.first().map(String::as_str) {
+        Some("light") => set_light(true),
+        Some("dark") => set_light(false),
+        Some("toggle") => set_light(!light()),
+        Some(other) => return format!("no mode named {other}: light, dark or toggle"),
+        None => {}
+    }
+
+    String::from(if light() { "mode light" } else { "mode dark" })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::SCHEMES;
-    use crate::theme::tests::contrast;
+    use super::{HUE_READS, SCHEMES, listed};
+    use crate::theme::{Theme, contrast};
+
+    fn opaque(theme: &Theme) -> amane::Color {
+        amane::Color::rgb(theme.panel.red(), theme.panel.green(), theme.panel.blue())
+    }
 
     #[test]
     fn every_scheme_reads() {
         for scheme in SCHEMES {
-            let theme = scheme.theme();
+            for light in [false, true] {
+                let Some(theme) = scheme.theme(light) else { continue };
 
-            assert!(contrast(theme.fg, scheme.background) >= 7.0, "{} text {}", scheme.name, contrast(theme.fg, scheme.background));
-            assert!(contrast(theme.accent, scheme.background) >= 4.5, "{} accent {}", scheme.name, contrast(theme.accent, scheme.background));
-            assert!(contrast(theme.on_accent, theme.accent) >= 4.5, "{} on accent", scheme.name);
+                let background = opaque(&theme);
+
+                assert!(contrast(theme.fg, background) >= 7.0, "{} text {}", scheme.name, contrast(theme.fg, background));
+                assert!(contrast(theme.accent, background) >= 4.5, "{} accent {}", scheme.name, contrast(theme.accent, background));
+                assert!(contrast(theme.on_accent, theme.accent) >= 4.5, "{} on accent", scheme.name);
+            }
         }
+    }
+
+    #[test]
+    fn a_light_version_is_light_and_its_hues_show() {
+        let light = listed(true);
+
+        assert!(!light.is_empty() && light.len() < SCHEMES.len());
+        assert_eq!(listed(false).len(), SCHEMES.len());
+
+        for scheme in light {
+            let theme = scheme.theme(true).expect("listed as light");
+            let background = opaque(&theme);
+
+            assert!(contrast(background, amane::Color::rgb(0, 0, 0)) > 12.0, "{} is dark", scheme.name);
+
+            for hue in [theme.red, theme.yellow, theme.green, theme.blue, theme.purple, theme.orange] {
+                assert!(contrast(hue, background) >= HUE_READS, "{} hue {}", scheme.name, contrast(hue, background));
+            }
+        }
+    }
+
+    // Latte's own colours read as they are, so the scheme looks like itself: only its yellow is darkened
+    #[test]
+    fn a_light_version_keeps_the_colours_that_read() {
+        let theme = super::named("Catppuccin").and_then(|scheme| scheme.theme(true)).expect("Catppuccin has a light version");
+
+        let same = |color: amane::Color, value: u32| (color.red(), color.green(), color.blue()) == ((value >> 16) as u8, (value >> 8) as u8, value as u8);
+
+        assert!(same(theme.fg, 0x4c4f69));
+        assert!(same(theme.accent, 0x8839ef));
+        assert!(same(theme.red, 0xd20f39));
+        assert!(!same(theme.yellow, 0xdf8e1d));
     }
 
     #[test]

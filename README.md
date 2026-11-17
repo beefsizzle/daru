@@ -3,7 +3,7 @@
 A desktop shell for [Umbriel](https://docs.noctalia.dev/umbriel/), built with [Amane](https://github.com/MystiaFin/amane).
 Bar, tray, dashboard, launcher, notifications, lock screen (also when you step away), wallpaper picker, screenshot tool
 and the usual dropdowns,
-all coloured from the wallpaper, or from one of the colour schemes in the wallpaper picker.
+all coloured from the wallpaper, or from one of the colour schemes in the wallpaper picker, dark or light.
 
 It's a personal shell, not a plug-and-play one: expect to read the source if you want to try it. 
 
@@ -31,8 +31,9 @@ amane run
 ```
 
 Panels open with `amane ipc call toggle <name>` (see `src/panels.rs`). Other apps can follow the shell's colours
-too (see `src/recolor.rs`), and `amane ipc call scheme <name>|wallpaper` switches the colour scheme from a keybind
-(see `src/schemes.rs`). `greetd/` holds a login screen for greetd, with its own `install.sh`.
+too (see `src/recolor.rs`), and `amane ipc call scheme <name>|wallpaper` switches the colour scheme from a keybind,
+as `amane ipc call mode light|dark|toggle` does the dark or light mode (see `src/schemes.rs`). `greetd/` holds a login
+screen for greetd, with its own `install.sh`.
 
 `amane ipc call screenshot region|screen|annotate` takes screenshots: pick a region over the frozen screen, then save,
 copy, or open it in satty to draw on.

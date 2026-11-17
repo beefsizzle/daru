@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use amane::{Argument, Bus, Color, Service, Value};
 
-use crate::theme::{Theme, hex, mix, over, theme, to_hsl};
+use crate::theme::{Theme, hex, mix, over, themed, to_hsl};
 
 /*
  * the shell's colours for other apps, from the wallpaper or the colour scheme picked, written whenever they change.
@@ -13,15 +13,16 @@ use crate::theme::{Theme, hex, mix, over, theme, to_hsl};
  * ~/.config/amane-shell/recolor, one name per line:
  *
  *     gtk       ~/.config/gtk-4.0/daru.css, for GTK4 and libadwaita apps when they next start, and GNOME's accent
- *               setting, which libadwaita apps follow at once, even ones already open. `@import url("daru.css");` in
- *               ~/.config/gtk-4.0/gtk.css
+ *               and dark-or-light settings, which libadwaita apps follow at once, even ones already open, and which
+ *               other apps read through the settings portal. `@import url("daru.css");` in ~/.config/gtk-4.0/gtk.css
  *     umbriel   ~/.config/umbriel/daru-colors.toml, the window borders, for `[include.optional] files =
  *               ["daru-colors.toml"]` in Umbriel's config. Umbriel is asked to reload
  *     ghostty   ~/.config/ghostty/daru-colors, background, text, cursor and selection. Ghostty is asked to reload.
  *               `config-file = ?daru-colors` in Ghostty's config
  *     foot      ~/.config/foot/daru-colors.ini, the same colours as Ghostty's, for foot windows opened after the change
- *               (foot can't reload them). `include=~/.config/foot/daru-colors.ini` at the top of foot.ini
- *     zed      ~/.config/zed/themes/daru.json, a theme called "Daru". Zed reloads it by itself
+ *               (foot can't reload them), as a dark and a light theme: open windows do go over to the other one when
+ *               the mode changes. `include=~/.config/foot/daru-colors.ini` at the top of foot.ini
+ *     zed       ~/.config/zed/themes/daru.json, the themes "Daru" and "Daru Light". Zed reloads them by itself
  *     kde       ~/.local/share/color-schemes/Daru.colors, a colour scheme for KDE apps like Dolphin, and the same colours
  *               in ~/.config/kdeglobals, where Qt apps take them from with QT_QPA_PLATFORMTHEME=kde (plasma-integration).
  *               open ones are told the palette changed, as Plasma does, and recolour at once
@@ -31,7 +32,8 @@ use crate::theme::{Theme, hex, mix, over, theme, to_hsl};
  *               the new colours at once. `color_theme = "daru"` in ~/.config/btop/btop.conf
  *     regreet   /var/lib/daru-greeter, the wallpaper and a stylesheet for ReGreet, the login screen under greetd
  *               (greetd/ in this repository). the greeter runs as its own user and can't read the home folder, so
- *               they're copied to a folder greetd/install.sh makes once, with sudo. nothing is written until it exists
+ *               they're copied to a folder greetd/install.sh makes once, with sudo. nothing is written until it exists.
+ *               it always gets the dark colours: the login screen stays dark, like the lock screen
  */
 #[derive(Clone, Copy, PartialEq)]
 enum App {
@@ -81,33 +83,43 @@ pub fn export() {
             return;
         }
 
-        let colors = Colors::from(&theme());
+        // both sets, for the apps that keep a dark and a light theme of their own and switch between them (foot, Zed),
+        // and for the login screen, which stays dark. the rest get the ones in use
+        let in_light = crate::schemes::light();
+
+        let dark = Colors::from(&themed(false));
+        let light = Colors::from(&themed(true));
+
+        let colors = if in_light { &light } else { &dark };
 
         for app in apps {
             match app {
                 App::Gtk => {
-                    write(&config("gtk-4.0/daru.css"), &gtk(&colors));
+                    write(&config("gtk-4.0/daru.css"), &gtk(colors));
 
-                    set_accent(gnome_accent(colors.accent));
+                    set_interface("accent-color", gnome_accent(colors.accent));
+                    set_interface("color-scheme", if in_light { "prefer-light" } else { "prefer-dark" });
                 }
                 App::Umbriel => {
-                    if write(&config("umbriel/daru-colors.toml"), &umbriel(&colors)) {
+                    if write(&config("umbriel/daru-colors.toml"), &umbriel(colors)) {
                         reload_umbriel();
                     }
                 }
                 App::Ghostty => {
-                    if write(&config("ghostty/daru-colors"), &ghostty(&colors)) {
+                    if write(&config("ghostty/daru-colors"), &ghostty(colors)) {
                         reload_ghostty();
                     }
                 }
                 App::Foot => {
-                    write(&config("foot/daru-colors.ini"), &foot(&colors));
+                    if write(&config("foot/daru-colors.ini"), &foot(&dark, &light, in_light)) {
+                        switch_foot(in_light);
+                    }
                 }
                 App::Zed => {
-                    write(&config("zed/themes/daru.json"), &zed(&colors));
+                    write(&config("zed/themes/daru.json"), &zed(&dark, &light));
                 }
                 App::Kde => {
-                    let scheme = kde(&colors);
+                    let scheme = kde(colors);
 
                     write(&data("color-schemes/Daru.colors"), &scheme);
 
@@ -127,15 +139,15 @@ pub fn export() {
                     }
                 }
                 App::Strata => {
-                    write(&config("strata/themes/daru.toml"), &strata(&colors));
+                    write(&config("strata/themes/daru.toml"), &strata(colors));
                 }
                 App::Btop => {
-                    if write(&config("btop/themes/daru.theme"), &btop(&colors)) {
+                    if write(&config("btop/themes/daru.theme"), &btop(colors)) {
                         reload_btop();
                     }
                 }
                 App::Regreet => {
-                    greeter(&colors);
+                    greeter(&dark);
                 }
             }
         }
@@ -192,6 +204,7 @@ struct Colors {
     blue: Color,
     purple: Color,
     orange: Color,
+    light: bool, // a light background, for the apps that have to be told
 }
 
 impl Colors {
@@ -214,6 +227,7 @@ impl Colors {
             blue: t.blue,
             purple: t.purple,
             orange: t.orange,
+            light: to_hsl(background).2 > 0.5,
         }
     }
 }
@@ -295,25 +309,33 @@ fn gnome_accent(accent: Color) -> &'static str {
     HUES.iter().min_by(|a, b| distance(a.1).total_cmp(&distance(b.1))).map_or("blue", |(name, _)| name)
 }
 
-// only when it changes: every change makes every libadwaita app restyle
-fn set_accent(name: &str) {
-    let current = Command::new("gsettings")
-        .args(["get", "org.gnome.desktop.interface", "accent-color"])
-        .stderr(Stdio::null())
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().trim_matches('\'').to_string())
-        .unwrap_or_default();
+/*
+ * one of GNOME's interface settings: the accent, and whether apps should be dark or light ("color-scheme"), which
+ * libadwaita apps follow at once, and Zed, Strata and others through the settings portal. only when it changes: every
+ * change makes every libadwaita app restyle.
+ *
+ * through gsettings where it's installed. NixOS has no gsettings on the PATH but does have dconf's own tool, and
+ * dconf is where these settings are kept, so there it's written straight into it. both print a text value quoted
+ */
+fn set_interface(key: &str, value: &str) {
+    const SCHEMA: &str = "org.gnome.desktop.interface";
 
-    if current == name {
+    let quoted = format!("'{value}'");
+    let path = format!("/org/gnome/desktop/interface/{key}");
+
+    let run = |program: &str, arguments: &[&str]| Command::new(program).args(arguments).stdin(Stdio::null()).stderr(Stdio::null()).output();
+
+    // an error is the program not being there
+    let asked = run("gsettings", &["get", SCHEMA, key]);
+    let gsettings = asked.is_ok();
+
+    let current = if gsettings { asked } else { run("dconf", &["read", &path]) };
+
+    if current.is_ok_and(|output| String::from_utf8_lossy(&output.stdout).trim() == quoted) {
         return;
     }
 
-    let _ = Command::new("gsettings")
-        .args(["set", "org.gnome.desktop.interface", "accent-color", name])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    let _ = if gsettings { run("gsettings", &["set", SCHEMA, key, value]) } else { run("dconf", &["write", &path, &quoted]) };
 }
 
 // the window borders: the accent on the focused window. colours as "#rrggbbaa"
@@ -362,34 +384,82 @@ fn ghostty(c: &Colors) -> String {
         text.push_str(&format!("palette = {index}={}\n", hex(color)));
     }
 
+    // the usual hues are made for a dark background, and their yellow and green can't be read on a light one
+    if c.light {
+        for (index, color) in terminal_hues(c).into_iter().enumerate() {
+            text.push_str(&format!("palette = {}={}\npalette = {}={}\n", index + 1, hex(color), index + 9, hex(color)));
+        }
+    }
+
     text
 }
 
-// Ghostty's colours in foot's terms: its theme section, plain hex without the #, the cursor as "text cursor", and the
-// black and white ones of the 16 by name (regular0 is palette 0, bright7 is palette 15)
-fn foot(c: &Colors) -> String {
+// the six of the 16 terminal colours between black and white, in their order: red, green, yellow, blue, magenta and
+// cyan, which the theme has no colour for, so it's the blue and the green mixed
+fn terminal_hues(c: &Colors) -> [Color; 6] {
+    [c.red, c.green, c.yellow, c.blue, c.purple, mix(c.blue, c.green, 0.5)]
+}
+
+/*
+ * Ghostty's colours in foot's terms: plain hex without the #, the cursor as "text cursor", and the black and white
+ * ones of the 16 by name (regular0 is palette 0, bright7 is palette 15).
+ *
+ * foot keeps two themes, [colors-dark] and [colors-light], and both are always written: the mode picks which one new
+ * windows start in, and open ones are switched over (see `switch_foot`). the dark one leaves the six hues to
+ * foot.ini. the light one sets them, since hues picked for a dark background can't be read on a light one
+ */
+fn foot(dark: &Colors, light: &Colors, in_light: bool) -> String {
     let plain = |color: Color| hex(color).trim_start_matches('#').to_string();
 
-    let lines = [
-        ("background", c.background),
-        ("foreground", c.text),
-        ("selection-background", mix(c.background, c.accent, 0.35)),
-        ("selection-foreground", c.text),
-        ("regular0", c.surface),
-        ("regular7", c.dim),
-        ("bright0", c.faint),
-        ("bright7", c.text),
-    ];
+    let section = |name: &str, c: &Colors| {
+        let lines = [
+            ("background", c.background),
+            ("foreground", c.text),
+            ("selection-background", mix(c.background, c.accent, 0.35)),
+            ("selection-foreground", c.text),
+            ("regular0", c.surface),
+            ("regular7", c.dim),
+            ("bright0", c.faint),
+            ("bright7", c.text),
+        ];
 
-    let mut text = format!("# {HEADER}\n\n[colors-dark]\n");
+        let mut text = format!("[{name}]\n");
 
-    for (key, color) in lines {
-        text.push_str(&format!("{key}={}\n", plain(color)));
+        for (key, color) in lines {
+            text.push_str(&format!("{key}={}\n", plain(color)));
+        }
+
+        text.push_str(&format!("cursor={} {}\n", plain(c.on_accent), plain(c.accent)));
+
+        text
+    };
+
+    let mut text = format!("# {HEADER}\n\n");
+
+    if in_light {
+        text.push_str("[main]\ninitial-color-theme=light\n\n");
     }
 
-    text.push_str(&format!("cursor={} {}\n", plain(c.on_accent), plain(c.accent)));
+    text.push_str(&section("colors-dark", dark));
+    text.push('\n');
+    text.push_str(&section("colors-light", light));
+
+    for (index, color) in terminal_hues(light).into_iter().enumerate() {
+        text.push_str(&format!("regular{}={}\nbright{}={}\n", index + 1, plain(color), index + 1, plain(color)));
+    }
 
     text
+}
+
+// open foot windows go over to the mode's theme: SIGUSR1 is foot's signal for the dark one, SIGUSR2 for the light one.
+// they show the colours that were in the file when they started. nothing happens when none is open
+fn switch_foot(light: bool) {
+    let _ = Command::new("pkill")
+        .args([if light { "-USR2" } else { "-USR1" }, "-x", "foot"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 // a KDE colour scheme: each group of widgets (windows, the file view, buttons, the selection...) gets the same set of
@@ -836,7 +906,17 @@ fn reload_btop() {
         .status();
 }
 
-fn zed(c: &Colors) -> String {
+// both sets of the shell's colours in one theme file: "Daru", the dark ones, and "Daru Light". with `"theme": { "mode":
+// "system", "dark": "Daru", "light": "Daru Light" }` in Zed's settings, Zed follows the mode by itself
+fn zed(dark: &Colors, light: &Colors) -> String {
+    format!(
+        "{{\n  \"$schema\": \"https://zed.dev/schema/themes/v0.2.0.json\",\n  \"name\": \"Daru\",\n  \"author\": \"{HEADER}\",\n  \"themes\": [\n{},\n{}\n  ]\n}}\n",
+        zed_theme(dark, "Daru", "dark"),
+        zed_theme(light, "Daru Light", "light"),
+    )
+}
+
+fn zed_theme(c: &Colors, name: &str, appearance: &str) -> String {
     let h = |color: Color| hex(color);
 
     // a colour with transparency, "#rrggbbaa"
@@ -845,14 +925,9 @@ fn zed(c: &Colors) -> String {
     let syntax = |color: Color| format!("{{ \"color\": \"{}\" }}", h(color));
 
     format!(
-        r#"{{
-  "$schema": "https://zed.dev/schema/themes/v0.2.0.json",
-  "name": "Daru",
-  "author": "{HEADER}",
-  "themes": [
-    {{
-      "name": "Daru",
-      "appearance": "dark",
+        r#"    {{
+      "name": "{name}",
+      "appearance": "{appearance}",
       "style": {{
         "background": "{background}",
         "surface.background": "{surface}",
@@ -926,10 +1001,7 @@ fn zed(c: &Colors) -> String {
           "comment": {{ "color": "{faint}", "font_style": "italic" }}
         }}
       }}
-    }}
-  ]
-}}
-"#,
+    }}"#,
         background = h(c.background),
         surface = h(c.surface),
         raised = h(c.raised),
@@ -1021,7 +1093,7 @@ mod tests {
 
     #[test]
     fn the_strata_theme_has_all_nine_colours() {
-        let theme = super::strata(&super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c))));
+        let theme = super::strata(&super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c), false)));
 
         assert!(theme.contains("name = \"Daru\""));
 
@@ -1035,7 +1107,7 @@ mod tests {
 
     #[test]
     fn the_greeter_stylesheet_defines_every_colour_it_uses() {
-        let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c)));
+        let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c), false));
 
         let css = super::regreet(&colors);
 
@@ -1049,7 +1121,7 @@ mod tests {
 
     #[test]
     fn the_btop_theme_sets_every_colour_and_gradient() {
-        let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c)));
+        let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c), false));
 
         let theme = super::btop(&colors);
 
@@ -1066,7 +1138,7 @@ mod tests {
 
     #[test]
     fn umbriel_gets_both_border_colours_with_alpha() {
-        let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c)));
+        let colors = super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c), false));
 
         let file = super::umbriel(&colors);
 
@@ -1082,5 +1154,56 @@ mod tests {
     #[test]
     fn greys_become_slate() {
         assert_eq!(gnome_accent(Color::rgb(0x88, 0x88, 0x8c)), "slate");
+    }
+
+    // the same wallpaper's colours, dark and light
+    fn both() -> (super::Colors, super::Colors) {
+        let colors = |light: bool| super::Colors::from(&crate::theme::derive(Color::rgb(20, 24, 30), Color::rgb(230, 230, 230), Color::rgb(0xea, 0x70, 0x7c), light));
+
+        (colors(false), colors(true))
+    }
+
+    #[test]
+    fn foot_gets_both_themes_and_starts_in_the_mode() {
+        let (dark, light) = both();
+
+        assert!(light.light && !dark.light);
+
+        let text = super::foot(&dark, &light, false);
+
+        let (dark_theme, light_theme) = text.split_once("[colors-light]").expect("no light theme");
+
+        assert!(dark_theme.contains("[colors-dark]"));
+        assert!(!text.contains("initial-color-theme"));
+
+        // the dark theme leaves the hues to foot.ini, the light one sets all six in both rows
+        assert!(!dark_theme.contains("regular1="));
+
+        for index in 1..=6 {
+            assert!(light_theme.contains(&format!("regular{index}=")) && light_theme.contains(&format!("bright{index}=")), "hue {index}");
+        }
+
+        assert!(super::foot(&dark, &light, true).contains("[main]\ninitial-color-theme=light\n"));
+    }
+
+    #[test]
+    fn zed_gets_a_dark_and_a_light_theme() {
+        let (dark, light) = both();
+
+        let text = super::zed(&dark, &light);
+
+        assert!(text.contains("\"name\": \"Daru\",\n      \"appearance\": \"dark\""));
+        assert!(text.contains("\"name\": \"Daru Light\",\n      \"appearance\": \"light\""));
+
+        assert_eq!(text.matches('{').count(), text.matches('}').count());
+        assert_eq!(text.matches('[').count(), text.matches(']').count());
+    }
+
+    #[test]
+    fn a_light_terminal_gets_hues_made_for_it() {
+        let (dark, light) = both();
+
+        assert!(!super::ghostty(&dark).contains("palette = 1="));
+        assert!(super::ghostty(&light).contains("palette = 1=") && super::ghostty(&light).contains("palette = 14="));
     }
 }
