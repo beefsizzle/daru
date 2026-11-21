@@ -146,9 +146,18 @@ fn tiles(t: &Theme, info: &SysInfo) -> (Row, f32) {
     let memory = &info.memory;
 
     let memory_rows: Vec<Box<dyn Widget>> = children![
-        stat(t, "Used", format!("{} / {}", short(memory.used), bytes(memory.total)), inside),
+        stat(t, "Used", format!("{} / {}", short(memory.used, memory.total), bytes(memory.total)), inside),
         stat(t, "Cached", bytes(memory.cached), inside),
-        stat(t, "Swap", format!("{} / {}", short(memory.swap_used), bytes(memory.swap_total)), inside),
+        stat(
+            t,
+            "Swap",
+            if memory.swap_total == 0 {
+                String::from("none")
+            } else {
+                format!("{} / {}", short(memory.swap_used, memory.swap_total), bytes(memory.swap_total))
+            },
+            inside
+        ),
     ];
 
     // the drives' own temperatures are shown with them, see `disks`
@@ -165,9 +174,17 @@ fn tiles(t: &Theme, info: &SysInfo) -> (Row, f32) {
     (Row::new(children![tile("Memory", memory_rows), tile("Temperatures", temperature_rows)]).gap(10.0), height)
 }
 
-// "12.3" for the part before " / 31.2 GB", so the unit is said once
-fn short(amount: u64) -> String {
-    format!("{:.1}", amount as f64 / (1u64 << 30) as f64)
+// "12.3" for the part before " / 31.2 GB", in the unit `bytes` says the total in, so the unit is said once and fits both
+fn short(amount: u64, total: u64) -> String {
+    let unit = match total {
+        total if total >= 1 << 40 => 1u64 << 40,
+        total if total >= 1 << 30 => 1 << 30,
+        _ => 1 << 20,
+    };
+
+    let value = amount as f64 / unit as f64;
+
+    if unit == 1 << 20 { format!("{value:.0}") } else { format!("{value:.1}") }
 }
 
 // each drive: where it's mounted, how full, and how much of how much. then what they all read and write, with their
