@@ -86,7 +86,11 @@ pub fn new_file() -> Option<PathBuf> {
 
     let now = amane::output("date '+%Y-%m-%d %H-%M-%S'");
 
-    Some(folder.join(format!("Screenshot from {now}.png")))
+    // two in the same second get a number, as file managers do, so the second doesn't replace the first
+    (1..100)
+        .map(|count| if count == 1 { format!("Screenshot from {now}.png") } else { format!("Screenshot from {now} ({count}).png") })
+        .map(|name| folder.join(name))
+        .find(|file| !file.exists())
 }
 
 /// puts a picture on the clipboard. wl-copy stays behind to hand it out, and has read the file by the time it returns
