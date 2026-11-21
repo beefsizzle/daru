@@ -307,19 +307,33 @@ fn close_button(t: &Theme, id: u32) -> Rectangle {
     })
 }
 
-// notification bodies may hold <b> and <a href> markup and entities like &amp; and &#39;
+/*
+ * notification bodies may hold <b> and <a href> markup and entities like &amp; and &#39;. many programs send a bare
+ * < all the same ("5 < 10", "<3"), so only a < that starts a name, or a / and a name, and closes before the next < is
+ * a tag. anything else is text
+ */
 pub fn strip_markup(text: &str) -> String {
     let mut tagless = String::new();
-    let mut inside = false;
+    let mut rest = text;
 
-    for letter in text.chars() {
-        match letter {
-            '<' => inside = true,
-            '>' => inside = false,
-            _ if !inside => tagless.push(letter),
-            _ => {}
+    while let Some(open) = rest.find('<') {
+        tagless.push_str(&rest[..open]);
+
+        let after = &rest[open + 1..];
+
+        let named = after.strip_prefix('/').unwrap_or(after).starts_with(|letter: char| letter.is_ascii_alphabetic());
+        let close = after.find('>').filter(|close| !after[..*close].contains('<'));
+
+        match close {
+            Some(close) if named => rest = &after[close + 1..],
+            _ => {
+                tagless.push('<');
+                rest = after;
+            }
         }
     }
+
+    tagless.push_str(rest);
 
     unescape(&tagless)
 }
@@ -471,6 +485,14 @@ mod tests {
     fn decoded_markup_is_not_stripped() {
         // the sender escaped it, so it's text and not a tag
         assert_eq!(strip_markup("a &lt;b&gt; c"), "a <b> c");
+    }
+
+    #[test]
+    fn a_bare_less_than_is_text() {
+        assert_eq!(strip_markup("5 < 10 and 3<4"), "5 < 10 and 3<4");
+        assert_eq!(strip_markup("I <3 you"), "I <3 you");
+        assert_eq!(strip_markup("a < <b>bold</b>"), "a < bold");
+        assert_eq!(strip_markup("x <y"), "x <y");
     }
 
     #[test]
