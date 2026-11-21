@@ -454,11 +454,14 @@ fn deliver(shot: Shot, answer: &Answer, picture: &Path) -> bool {
     let temporary = || crate::cache::runtime_dir().map(|folder| folder.join(format!("daru-screenshot-{}.png", COUNT.fetch_add(1, Ordering::Relaxed))));
 
     match (shot, answer.action) {
-        // satty saves, copies and notifies by itself, and the capture is left for it to read
+        // satty saves, copies and notifies by itself, and reads the capture from the file it's given. that file is in
+        // RAM (the runtime folder is a tmpfs), so it's removed once satty closes
         (Shot::Annotate, Action::Save) => {
             let Some(file) = temporary().filter(|file| cut(picture, &geometry, file)) else { return false };
 
-            amane::spawn(&format!("satty --filename {}", crate::wallpapers::quote(&file.display().to_string())));
+            let quoted = crate::wallpapers::quote(&file.display().to_string());
+
+            amane::spawn(&format!("satty --filename {quoted}; rm -f {quoted}"));
 
             true
         }
