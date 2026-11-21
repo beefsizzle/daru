@@ -145,7 +145,7 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
     // what goes in or comes out. running down, the number needs five minutes on battery, see battery::draw
     let rate = match (details.status.as_str(), details.charging, used) {
         ("Charging", Some(watts), _) => card(&t, "\u{f0e7}", "Charging", format!("{watts:.1} W"), String::from("adding ions")),
-        ("Discharging", _, Some((watts, over))) => card(&t, "\u{f0e7}", "Using", format!("{watts:.1} W"), format!("Iavg draw last {}", span(over.as_secs_f64() / 3600.0))),
+        ("Discharging", _, Some((watts, over))) => card(&t, "\u{f0e7}", "Using", format!("{watts:.1} W"), format!("avg draw last {}", span(over.as_secs_f64() / 3600.0))),
         ("Discharging", _, None) => card(&t, "\u{f0e7}", "Using", String::from("\u{2013}"), String::from("after 5 min on battery")),
         _ => card(&t, "\u{f1e6}", "Power", String::from("Plugged in"), String::from("not charging")),
     };
