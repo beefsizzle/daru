@@ -58,9 +58,12 @@ fn refresh() -> Option<Duration> {
     // each with how long it has left
     let mut shown = Vec::new();
 
-    if !dnd {
-        let notifications = Notifications::read();
+    let notifications = Notifications::read();
 
+    // what's still in the notification center, so a hidden toast is forgotten once its notification is dismissed
+    let present: HashSet<u32> = notifications.list().iter().map(|notification| notification.id()).collect();
+
+    if !dnd {
         for notification in notifications.list().iter().rev() {
             if hidden.contains(&notification.id()) {
                 continue;
@@ -76,6 +79,8 @@ fn refresh() -> Option<Duration> {
         }
     }
 
+    drop(notifications);
+
     shown.truncate(SLOTS);
 
     let due = shown.iter().map(|(_, left)| *left).min();
@@ -89,6 +94,8 @@ fn refresh() -> Option<Duration> {
     }
 
     let mut notify = Notify::write();
+
+    notify.hidden.retain(|id| present.contains(id));
 
     // one that was dismissed while this round was running stays dismissed
     let kept: Vec<u32> = ids.into_iter().filter(|id| !notify.hidden.contains(id)).collect();
