@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use amane::{Argument, Bus, Service, Value};
@@ -285,9 +286,30 @@ fn answer(call: &amane::Method) {
  * after. trusting lets the device connect by itself later, like a controller woken by its button
  */
 pub fn pair(path: &str) {
+    /*
+     * one pairing at a time. a second click while one runs would have its Pair refused at once, and its agent going
+     * away then took the first pairing's agent with it, so the first one failed too
+     */
+    static BUSY: AtomicBool = AtomicBool::new(false);
+
+    struct Done;
+
+    impl Drop for Done {
+        fn drop(&mut self) {
+            BUSY.store(false, Ordering::Release);
+        }
+    }
+
+    if BUSY.swap(true, Ordering::Acquire) {
+        return;
+    }
+
     let device = path.to_string();
 
     std::thread::spawn(move || {
+        // let go last, after the agent and the adapter are as they were
+        let _done = Done;
+
         let Some(adapter) = adapter() else { return };
 
         let bus = Bus::system();
