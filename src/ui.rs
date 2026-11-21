@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use amane::{
     Animation, Button, Center, Color, Column, Image, Point, Pointer, Rectangle, Row, Service, Stack, Start, Text, Weight,
@@ -44,8 +44,21 @@ pub fn app_icon(path: impl AsRef<std::path::Path>) -> Image {
  * instead of snapping. a view reads `hover(id)`, a handler calls `set_hover`
  */
 struct Hover {
-    items: HashMap<String, Animation>,
+    items: HashMap<String, Item>,
 }
+
+struct Item {
+    animation: Animation,
+    inside: bool,
+    changed: Instant,
+}
+
+/*
+ * notifications and tray menus make ids of their own (one per notification, one per menu entry), so ids that faded
+ * out a while ago are dropped once there are this many, rather than kept for the whole session. one dropped comes
+ * back at 0, which is where it had settled
+ */
+const KEPT: usize = 64;
 
 impl Service for Hover {
     fn new() -> Self {
@@ -90,18 +103,28 @@ fn scoped(id: &str) -> String {
 }
 
 pub fn hover(id: &str) -> f32 {
-    Hover::read().items.get(id).map_or(0.0, Animation::value)
+    Hover::read().items.get(id).map_or(0.0, |item| item.animation.value())
 }
 
 pub fn set_hover(id: &str, inside: bool) {
     let mut state = Hover::write();
 
-    let animation = state
-        .items
-        .entry(id.to_string())
-        .or_insert_with(|| Animation::new(0.0).duration(Duration::from_millis(140)));
+    if state.items.len() >= KEPT && !state.items.contains_key(id) {
+        state.items.retain(|_, item| item.inside || item.changed.elapsed() < Duration::from_secs(1));
+    }
 
-    animation.to(if inside { 1.0 } else { 0.0 });
+    let item = state.items.entry(id.to_string()).or_insert_with(|| Item {
+        animation: Animation::new(0.0).duration(Duration::from_millis(140)),
+        inside: false,
+        changed: Instant::now(),
+    });
+
+    if item.inside != inside {
+        item.inside = inside;
+        item.changed = Instant::now();
+    }
+
+    item.animation.to(if inside { 1.0 } else { 0.0 });
 }
 
 // ---------------------------------------------------------------- chips
