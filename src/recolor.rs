@@ -325,9 +325,10 @@ fn set_interface(key: &str, value: &str) {
 
     let run = |program: &str, arguments: &[&str]| Command::new(program).args(arguments).stdin(Stdio::null()).stderr(Stdio::null()).output();
 
-    // an error is the program not being there
+    // an error is the program not being there, and a failed run its schema lacking the key (accent-color is new), so
+    // either way it's written straight into dconf
     let asked = run("gsettings", &["get", SCHEMA, key]);
-    let gsettings = asked.is_ok();
+    let gsettings = asked.as_ref().is_ok_and(|output| output.status.success());
 
     let current = if gsettings { asked } else { run("dconf", &["read", &path]) };
 
