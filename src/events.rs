@@ -147,8 +147,8 @@ struct Raw {
     start: Option<(Stamp, Zone)>,
     end: Option<Stamp>,
     rule: Option<String>,
-    skipped: Vec<Stamp>,     // EXDATE: occurrences of a repeating event that were deleted
-    replaces: Option<Stamp>, // RECURRENCE-ID: this one is a moved or changed occurrence of a repeating event
+    skipped: Vec<(Stamp, Zone)>,     // EXDATE: occurrences of a repeating event that were deleted
+    replaces: Option<(Stamp, Zone)>, // RECURRENCE-ID: this one is a moved or changed occurrence of a repeating event
     cancelled: bool,
 }
 
@@ -157,21 +157,24 @@ fn events(text: &str, today: i64) -> Vec<Event> {
     let raws = parse(text);
 
     // a changed occurrence is its own VEVENT, and the repeating one has to leave that occurrence out
-    let mut replaced: HashMap<&str, HashSet<Stamp>> = HashMap::new();
+    let mut replaced: HashMap<&str, Vec<(Stamp, Zone)>> = HashMap::new();
 
     for raw in &raws {
-        if let Some(stamp) = raw.replaces {
-            replaced.entry(raw.uid.as_str()).or_default().insert(stamp);
+        if let Some(replaces) = &raw.replaces {
+            replaced.entry(raw.uid.as_str()).or_default().push(replaces.clone());
         }
     }
 
     let first = today - BEFORE;
     let last = today + AFTER;
 
-    // each occurrence, and the zone its time is in
-    let mut found: Vec<(Stamp, i64, Zone, &str)> = Vec::new();
+    // each occurrence, the zone its time is in, and which event it's of
+    let mut found: Vec<(Stamp, i64, Zone, &str, usize)> = Vec::new();
 
-    for raw in &raws {
+    // the occurrences each event leaves out (EXDATE, or a changed copy that replaces one), and the zone they're in
+    let mut skips: Vec<(usize, Stamp, Zone)> = Vec::new();
+
+    for (index, raw) in raws.iter().enumerate() {
         let Some((start, zone)) = &raw.start else {
             continue;
         };
@@ -186,35 +189,42 @@ fn events(text: &str, today: i64) -> Vec<Event> {
             _ => 0,
         };
 
-        let skipped: HashSet<Stamp> = raw
-            .skipped
-            .iter()
-            .copied()
-            .chain(if raw.replaces.is_none() { replaced.get(raw.uid.as_str()).into_iter().flatten().copied().collect() } else { Vec::new() })
-            .collect();
+        let others = if raw.replaces.is_none() { replaced.get(raw.uid.as_str()).map_or(&[][..], Vec::as_slice) } else { &[] };
 
-        let days = match (&raw.rule, raw.replaces) {
+        skips.extend(raw.skipped.iter().chain(others).map(|(stamp, zone)| (index, *stamp, zone.clone())));
+
+        let days = match (&raw.rule, &raw.replaces) {
             (Some(rule), None) => repeat(start.day, rule, first - extra, last),
             _ => vec![start.day],
         };
 
         for day in days {
-            let stamp = Stamp { day, minute: start.minute };
-
-            if skipped.contains(&stamp) || day + extra < first || day > last {
+            if day + extra < first || day > last {
                 continue;
             }
 
-            found.push((stamp, extra, zone.clone(), raw.title.as_str()));
+            found.push((Stamp { day, minute: start.minute }, extra, zone.clone(), raw.title.as_str(), index));
         }
     }
 
-    let local = to_local(&found.iter().map(|(stamp, _, zone, _)| (*stamp, zone.clone())).collect::<Vec<_>>());
+    /*
+     * the occurrences and the ones left out go into your time together, and are compared there: calendars often write
+     * an EXDATE or RECURRENCE-ID in UTC while the event itself is in a named zone, and as written those never match
+     */
+    let mut asked: Vec<(Stamp, Zone)> = found.iter().map(|(stamp, _, zone, _, _)| (*stamp, zone.clone())).collect();
+
+    asked.extend(skips.iter().map(|(_, stamp, zone)| (*stamp, zone.clone())));
+
+    let local = to_local(&asked);
+    let (shown, left_out) = local.split_at(found.len());
+
+    let skipped: HashSet<(usize, Stamp)> = skips.iter().zip(left_out).map(|((index, _, _), stamp)| (*index, *stamp)).collect();
 
     found
         .iter()
-        .zip(local)
-        .map(|((_, extra, _, title), stamp)| Event {
+        .zip(shown)
+        .filter(|((.., index), stamp)| !skipped.contains(&(*index, **stamp)))
+        .map(|((_, extra, _, title, _), stamp)| Event {
             day: stamp.day,
             last: stamp.day + extra,
             time: stamp.minute.map(|minute| format!("{:02}:{:02}", minute / 60, minute % 60)),
@@ -282,8 +292,8 @@ fn parse(text: &str) -> Vec<Raw> {
             "DTSTART" => raw.start = stamp(parameters, value),
             "DTEND" => raw.end = stamp(parameters, value).map(|(stamp, _)| stamp),
             "RRULE" => raw.rule = Some(value.to_string()),
-            "EXDATE" => raw.skipped.extend(value.split(',').filter_map(|one| stamp(parameters, one)).map(|(stamp, _)| stamp)),
-            "RECURRENCE-ID" => raw.replaces = stamp(parameters, value).map(|(stamp, _)| stamp),
+            "EXDATE" => raw.skipped.extend(value.split(',').filter_map(|one| stamp(parameters, one))),
+            "RECURRENCE-ID" => raw.replaces = stamp(parameters, value),
             "STATUS" => raw.cancelled = value == "CANCELLED",
             _ => {}
         }
@@ -793,6 +803,32 @@ END:VEVENT
             events.iter().map(|event| (event.day - today, event.time.as_deref().unwrap_or(""), event.title.as_str())).collect();
 
         assert_eq!(seen, vec![(1, "09:00", "Standup"), (2, "11:00", "Standup, later"), (3, "09:00", "Standup")]);
+    }
+
+    #[test]
+    fn left_out_occurrences_in_utc_match_an_event_in_a_named_zone() {
+        // 09:00 in Oslo is 08:00 UTC in November. the 3rd is deleted and the 4th moved, both written in UTC
+        let file = "BEGIN:VEVENT
+UID:standup
+DTSTART;TZID=Europe/Oslo:20261102T090000
+RRULE:FREQ=DAILY;COUNT=4
+EXDATE:20261103T080000Z
+SUMMARY:Standup
+END:VEVENT
+BEGIN:VEVENT
+UID:standup
+RECURRENCE-ID:20261104T080000Z
+DTSTART;TZID=Europe/Oslo:20261104T110000
+SUMMARY:Standup, later
+END:VEVENT
+";
+        let today = day(2026, 11, 1);
+
+        let mut titles: Vec<String> = events(file, today).into_iter().map(|event| event.title).collect();
+
+        titles.sort();
+
+        assert_eq!(titles, vec!["Standup", "Standup", "Standup, later"]);
     }
 
     #[test]
