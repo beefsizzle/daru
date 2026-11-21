@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -24,6 +24,21 @@ static WAITING_FRAMES: Mutex<Option<HashMap<String, u32>>> = Mutex::new(None);
 // how long a fade waits for its first frame at most: a hidden or stalled window mustn't hold it back
 const WAIT_FOR_FRAME: Duration = Duration::from_millis(300);
 
+/*
+ * the monitors that have a wallpaper window, so a fade waits for every one of them and not only those that drew
+ * first. one unplugged stays counted, and the fade then waits out WAIT_FOR_FRAME, as it would for a stalled window
+ */
+static MONITORS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// `monitor` has a wallpaper window
+pub fn on_monitor(monitor: &str) {
+    let mut monitors = crate::sync::lock(&MONITORS);
+
+    if !monitors.contains(monitor) {
+        monitors.insert(monitor.to_string());
+    }
+}
+
 /// the wallpaper window of `monitor` drew a frame of a fade that's waiting (see `WAITING_FRAMES`)
 pub fn drawn_waiting(monitor: &str) {
     if let Some(frames) = crate::sync::lock(&WAITING_FRAMES).as_mut() {
@@ -31,9 +46,13 @@ pub fn drawn_waiting(monitor: &str) {
     }
 }
 
-// every monitor that drew the waiting fade has drawn it twice
+// every monitor has drawn the waiting fade twice
 fn first_frame_shown() -> bool {
-    crate::sync::lock(&WAITING_FRAMES).as_ref().is_some_and(|frames| !frames.is_empty() && frames.values().all(|count| *count >= 2))
+    let monitors = crate::sync::lock(&MONITORS).len().max(1);
+
+    crate::sync::lock(&WAITING_FRAMES)
+        .as_ref()
+        .is_some_and(|frames| frames.len() >= monitors && frames.values().all(|count| *count >= 2))
 }
 
 // how long a new wallpaper takes to fade in

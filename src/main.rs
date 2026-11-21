@@ -229,6 +229,8 @@ const WAITING_OPACITY: f32 = 0.001;
  * (see wallpapers.rs)
  */
 fn wallpaper_window(monitor: &amane::Monitor) -> LayerWindow {
+    wallpaper::on_monitor(&monitor.name);
+
     let (shown, incoming, fade, waiting) = {
         let wallpaper = wallpaper::Wallpaper::read();
 
