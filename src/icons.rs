@@ -65,6 +65,11 @@ fn find(name: &str) -> Option<String> {
 
     for (root, themes) in roots() {
         for &theme in themes {
+            // most data folders have no icons, or only some of the themes: one look each, not one per possible file
+            if !Path::new(&format!("{root}/{theme}")).is_dir() {
+                continue;
+            }
+
             for context in CONTEXTS {
                 for extension in ["svg", "png"] {
                     // hicolor and Adwaita: <size>/<context>/<name>
