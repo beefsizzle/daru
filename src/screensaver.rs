@@ -2,13 +2,15 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread;
 
-use amane::{Argument, Bus, Idle, Method, Service};
+use amane::{Argument, Bus, Idle, Method, Service, Value};
 
 const NAME: &str = "org.freedesktop.ScreenSaver";
 const INTERFACE: &str = "org.freedesktop.ScreenSaver";
 
 // KDE also answers on /ScreenSaver, but SDL, browsers and the portal all ask here
 const PATH: &str = "/org/freedesktop/ScreenSaver";
+
+const BUS: &str = "org.freedesktop.DBus";
 
 static NEXT_COOKIE: AtomicU32 = AtomicU32::new(1);
 
@@ -98,9 +100,23 @@ fn answer(method: &Method) {
     match (method.name(), method.arguments()) {
         // (application, reason), answered with the cookie that ends it
         ("Inhibit", [_, _]) => {
-            let cookie = ScreenSaver::write().take(method.sender());
+            let owner = method.sender();
+
+            let cookie = ScreenSaver::write().take(owner);
 
             method.reply(&[Argument::Unsigned(cookie)]);
+
+            /*
+             * leaving the bus is heard on another thread, which can hear it before the hold above was taken, and the
+             * session would then stay awake for good. so the asker is looked for once the hold is there: gone now
+             * means it left in between, and leaving later is heard with the hold in place
+             */
+            let here = Bus::session().call(BUS, "/org/freedesktop/DBus", BUS, "NameHasOwner", &[Argument::from(owner)]);
+
+            // only a clear no: a call that failed says nothing about whether it left
+            if matches!(here, Value::Bool(false)) {
+                ScreenSaver::write().let_go(|hold| hold.cookie == cookie);
+            }
         }
 
         ("UnInhibit", [cookie]) => {
