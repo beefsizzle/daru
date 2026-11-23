@@ -6,16 +6,16 @@ use amane::{
     Service, Start, Widget, Workspaces,
 };
 
-use crate::focus::Windows;
+use crate::focus::{Titles, Windows};
 use crate::panels::{self, Which};
 use crate::theme::{RADIUS_SMALL, Theme, alpha, mix};
-use crate::ui::{app_icon, bold, chip, hover, label, set_hover};
+use crate::ui::{app_icon, bold, chip, hover, icon, label, set_hover};
 
 /*
  * the shelf in the bar: the pinned apps, then every other app with a window open, on any workspace or monitor. a click
  * on an open app brings its window forward wherever it is, again goes through its other windows, and a click on a
  * pinned app that isn't open starts it. a right click opens its menu: pin or unpin, close, and move to another
- * workspace. pins are kept in ~/.config/amane-shell/pinned
+ * workspace, for all its windows or one picked by its title. pins are kept in ~/.config/amane-shell/pinned
  */
 const ITEM: f32 = 30.0;
 const ITEM_GAP: f32 = 4.0;
@@ -244,8 +244,9 @@ pub fn view(t: &Theme, output: &str) -> Row {
 
 #[derive(Default)]
 struct Menu {
-    key: String,  // the app it's for
-    place: usize, // where its button is on the shelf, which the menu lines up under
+    key: String,            // the app it's for
+    place: usize,           // where its button is on the shelf, which the menu lines up under
+    chosen: Option<String>, // the one window closing and moving act on, or all of the app's when none
 }
 
 impl Service for Menu {
@@ -267,7 +268,7 @@ fn open_menu(key: &str, place: usize, output: &str) {
         return;
     }
 
-    *Menu::write() = Menu { key: key.to_string(), place };
+    *Menu::write() = Menu { key: key.to_string(), place, chosen: None };
 
     panels::show(Which::AppMenu, output);
 }
@@ -301,6 +302,7 @@ const MENU_PADDING: f32 = 6.0;
 const ROW: f32 = 30.0;
 const ROW_WIDTH: f32 = MENU_WIDTH - 2.0 * MENU_PADDING;
 const SPOT: f32 = 26.0;
+const SEPARATOR: f32 = 9.0;
 
 // a line of the menu that does something when clicked, and closes the menu
 fn entry(t: &Theme, id: &str, text: String, action: impl Fn() + 'static) -> Box<dyn Widget> {
@@ -325,6 +327,46 @@ fn entry(t: &Theme, id: &str, text: String, action: impl Fn() + 'static) -> Box<
             })
             .child(label(text, 12.5, t.fg)),
     )
+}
+
+/*
+ * one line of the list of an app's windows, with a tick on the one closing and moving act on. picking one leaves the
+ * menu open, for what to do with it
+ */
+fn choice(t: &Theme, id: &str, text: String, ticked: bool, window: Option<String>) -> Box<dyn Widget> {
+    let id = format!("appmenu/window/{id}");
+
+    let hot = hover(&id);
+
+    let tick = Rectangle::new().width(14.0).height(14.0).align_child(Center, Center).child(icon(
+        if ticked { "\u{f00c}" } else { "" },
+        11.0,
+        t.accent,
+    ));
+
+    let text = label(text, 12.5, t.fg).elide();
+
+    let text = Rectangle::new().width(ROW_WIDTH - 20.0 - 14.0 - 8.0).height(18.0).child(text);
+
+    Box::new(
+        Rectangle::new()
+            .width(ROW_WIDTH)
+            .height(ROW)
+            .radius(RADIUS_SMALL)
+            .fill(mix(alpha(t.surface, 0.0), t.surface_hi, hot))
+            .padding(Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 10.0 })
+            .align_child(Start, Center)
+            .cursor(Pointer)
+            .on_hover(move |inside| set_hover(&id, inside))
+            .on_click(move |_| Menu::write().chosen = window.clone())
+            .child(Row::new(vec![Box::new(tick) as Box<dyn Widget>, Box::new(text)]).gap(8.0).align(Center)),
+    )
+}
+
+fn separator(t: &Theme) -> Box<dyn Widget> {
+    let line = Rectangle::new().width(ROW_WIDTH - 20.0).height(1.0).fill(t.border);
+
+    Box::new(Rectangle::new().width(ROW_WIDTH).height(SEPARATOR).align_child(Center, Center).child(line))
 }
 
 /*
@@ -390,10 +432,10 @@ pub fn menu(monitor: &Monitor) -> LayerWindow {
         return panels::hidden("amane-panel");
     };
 
-    let (key, place) = {
+    let (key, place, chosen) = {
         let menu = Menu::read();
 
-        (menu.key.clone(), menu.place)
+        (menu.key.clone(), menu.place, menu.chosen.clone())
     };
 
     // the app as the shelf has it now, which may have lost its windows while the menu was open
@@ -420,16 +462,50 @@ pub fn menu(monitor: &Monitor) -> LayerWindow {
 
     let mut height = ROW;
 
+    // with several windows, each by its title, so one can be closed or moved alone
+    let chosen = chosen.filter(|id| windows.contains(id));
+
+    if windows.len() > 1 {
+        let titles = Titles::read();
+
+        let all = format!("All {} windows", windows.len());
+
+        rows.push(choice(&t, "all", all, chosen.is_none(), None));
+
+        for (at, id) in windows.iter().enumerate() {
+            let title = match titles.of(id) {
+                "" => format!("Window {}", at + 1),
+                title => title.to_string(),
+            };
+
+            rows.push(choice(&t, id, title, chosen.as_ref() == Some(id), Some(id.clone())));
+        }
+
+        rows.push(separator(&t));
+
+        height += (windows.len() + 1) as f32 * ROW + SEPARATOR;
+    }
+
+    // what closing and moving act on
+    let targets = match &chosen {
+        Some(id) => vec![id.clone()],
+        None => windows.clone(),
+    };
+
     let pin_key = key.clone();
 
     rows.push(entry(&t, "pin", String::from(if pinned { "Unpin" } else { "Pin" }), move || toggle_pin(&pin_key)));
 
     height += ROW;
 
-    if !windows.is_empty() {
-        let text = if windows.len() == 1 { String::from("Close") } else { format!("Close {} windows", windows.len()) };
+    if !targets.is_empty() {
+        let text = match (targets.len(), windows.len()) {
+            (1, 1) => String::from("Close"),
+            (1, _) => String::from("Close window"),
+            (count, _) => format!("Close {count} windows"),
+        };
 
-        let closing = windows.clone();
+        let closing = targets.clone();
 
         rows.push(entry(&t, "close", text, move || close_all(&closing)));
 
@@ -455,7 +531,7 @@ pub fn menu(monitor: &Monitor) -> LayerWindow {
         }
 
         for output in &outputs {
-            rows.push(workspace_row(&t, output, outputs.len() > 1, &windows));
+            rows.push(workspace_row(&t, output, outputs.len() > 1, &targets));
 
             height += SPOT;
         }

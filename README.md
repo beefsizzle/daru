@@ -40,7 +40,7 @@ copy, or open it in satty to draw on.
 
 The bar's shelf shows pinned apps and every open one. A click jumps to the app's window on whatever workspace or
 monitor it's on, and a right click opens its menu: pin or unpin (kept in `~/.config/amane-shell/pinned`), close,
-or move it to another workspace.
+or move it to another workspace. With several windows open, the menu lists them by title, to close or move just one.
 
 `umbriel/config.toml` is an example Umbriel config for daru: Umbriel's own starting config with daru starting at
 login, its panels on the keybinds, and blur behind its bar and panels. Copy it to `~/.config/umbriel/config.toml`.

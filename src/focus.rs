@@ -9,6 +9,29 @@ pub struct Windows {
     pub list: Vec<Window>,
 }
 
+/*
+ * the windows' titles, apart from the list: a title changes far more often than which windows are open, and only an
+ * app's menu shows them, so a new title redraws that menu while it's open and nothing else
+ */
+pub struct Titles {
+    by_id: Vec<(String, String)>,
+}
+
+impl Titles {
+    pub fn of(&self, id: &str) -> &str {
+        self.by_id.iter().find(|(window, _)| window == id).map_or("", |(_, title)| title)
+    }
+}
+
+impl Service for Titles {
+    fn new() -> Self {
+        Self { by_id: Vec::new() }
+    }
+
+    // written along with the window list, see Windows::listen
+    fn listen() {}
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Window {
     pub id: String,
@@ -76,6 +99,13 @@ fn windows(snapshot: &str) -> Vec<Window> {
         .collect()
 }
 
+fn titles(snapshot: &str) -> Vec<(String, String)> {
+    objects(snapshot)
+        .into_iter()
+        .filter_map(|window| Some((json_string(window, "id")?, json_string(window, "title").unwrap_or_default())))
+        .collect()
+}
+
 /*
  * Umbriel lists the focused window first, so the shelf's apps would swap places on every change of focus. windows
  * already shown keep their place, and new ones go after them
@@ -137,7 +167,7 @@ impl Service for Windows {
      * Umbriel sends its whole window list on every change to any window (a title, a move, each frame of an animation),
      * far more often than a window opens, closes or takes focus. so a reader thread passes the lists on, and this
      * thread sleeps until one comes, waits a tenth of a second for the rest of a burst, and reads the last of them.
-     * a title or a move changes nothing kept here, so the bar isn't drawn again for those
+     * a move changes nothing kept here, and a title only Titles, so the bar isn't drawn again for those
      */
     fn listen() {
         if !compositor::umbriel() {
@@ -159,6 +189,12 @@ impl Service for Windows {
 
             if list != Self::read().list {
                 Self::write().list = list;
+            }
+
+            let by_id = titles(&latest);
+
+            if by_id != Titles::read().by_id {
+                Titles::write().by_id = by_id;
             }
         }
     }
@@ -185,7 +221,7 @@ fn follow(noted: &std::sync::mpsc::Sender<String>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Window, in_order, json_string, windows};
+    use super::{Window, in_order, json_string, titles, windows};
 
     #[test]
     fn umbriels_windows_and_the_focused_one() {
@@ -199,6 +235,8 @@ mod tests {
         assert_eq!(found, [("1".into(), "a".into(), false), ("2".into(), "b".into(), true)]);
 
         assert!(windows(r#"{"data":[],"event":"windows"}"#).is_empty());
+
+        assert_eq!(titles(line)[1], ("2".into(), "Mine".into()));
     }
 
     #[test]
