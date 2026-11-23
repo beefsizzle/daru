@@ -191,8 +191,12 @@ fn activate(app: Option<&DesktopApp>, windows: &[String]) {
 
     let next = focused.map_or(0, |at| (at + 1) % windows.len());
 
-    // Umbriel's window ids are hex, nothing for the shell to misread
-    amane::spawn(&format!("umbriel msg window-focus {}", windows[next]));
+    focus(&windows[next]);
+}
+
+// Umbriel's window ids are hex, nothing for the shell to misread
+fn focus(id: &str) {
+    amane::spawn(&format!("umbriel msg window-focus {id}"));
 }
 
 // ---------------------------------------------------------------- drawing
@@ -331,7 +335,8 @@ fn entry(t: &Theme, id: &str, text: String, action: impl Fn() + 'static) -> Box<
 
 /*
  * one line of the list of an app's windows, with a tick on the one closing and moving act on. picking one leaves the
- * menu open, for what to do with it
+ * menu open, for what to do with it. picking the ticked one again, or any one with a right click, brings that window
+ * forward
  */
 fn choice(t: &Theme, id: &str, text: String, ticked: bool, window: Option<String>) -> Box<dyn Widget> {
     let id = format!("appmenu/window/{id}");
@@ -358,7 +363,14 @@ fn choice(t: &Theme, id: &str, text: String, ticked: bool, window: Option<String
             .align_child(Start, Center)
             .cursor(Pointer)
             .on_hover(move |inside| set_hover(&id, inside))
-            .on_click(move |_| Menu::write().chosen = window.clone())
+            .on_click(move |button| match &window {
+                Some(id) if ticked || matches!(button, Button::Right) => {
+                    focus(id);
+
+                    panels::close();
+                }
+                _ => Menu::write().chosen = window.clone(),
+            })
             .child(Row::new(vec![Box::new(tick) as Box<dyn Widget>, Box::new(text)]).gap(8.0).align(Center)),
     )
 }
