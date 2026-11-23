@@ -4,9 +4,16 @@ use amane::Service;
 
 use crate::compositor;
 
-// the title of the focused window, from Umbriel's event stream. empty on another compositor
-pub struct Focus {
-    pub title: String,
+// the open windows, for the bar's shelf, from Umbriel's event stream. empty on another compositor
+pub struct Windows {
+    pub list: Vec<Window>,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Window {
+    pub id: String,
+    pub app_id: String,
+    pub focused: bool,
 }
 
 /// the string value of `"key":"..."` in a line of JSON, with its escapes undone
@@ -50,14 +57,33 @@ fn unicode(characters: &mut std::str::Chars) -> Option<u32> {
 }
 
 /*
- * the focused window's title in one of Umbriel's window lists, {"data":[{window},{window}...],"event":"windows"}:
- * the window object that says "focused":true. that can't appear inside a title, where its quotes would be escaped
+ * the windows in one of Umbriel's window lists, {"data":[{window},{window}...],"event":"windows"}. the one with the
+ * keyboard says "active":true ("focused" is the last focused one of each workspace), which can't appear inside a
+ * title, where its quotes would be escaped. scratchpad windows (the drop-down terminal) come and go by keybind, so
+ * they're left out
  */
-fn focused_title(snapshot: &str) -> String {
+fn windows(snapshot: &str) -> Vec<Window> {
     objects(snapshot)
         .into_iter()
-        .find(|window| window.contains("\"focused\":true"))
-        .map_or_else(String::new, |window| json_string(window, "title").unwrap_or_default())
+        .filter(|window| json_string(window, "scratchpad").is_none_or(|pad| pad.is_empty()))
+        .filter_map(|window| {
+            Some(Window {
+                id: json_string(window, "id")?,
+                app_id: json_string(window, "app_id").unwrap_or_default(),
+                focused: window.contains("\"active\":true"),
+            })
+        })
+        .collect()
+}
+
+/*
+ * Umbriel lists the focused window first, so the shelf's apps would swap places on every change of focus. windows
+ * already shown keep their place, and new ones go after them
+ */
+fn in_order(shown: &[Window], mut list: Vec<Window>) -> Vec<Window> {
+    list.sort_by_key(|window| shown.iter().position(|old| old.id == window.id).unwrap_or(usize::MAX));
+
+    list
 }
 
 /// the objects in the list of one of Umbriel's events, {"data":[{...},{...}],"event":"..."}, each as its own text.
@@ -102,16 +128,16 @@ pub fn objects(snapshot: &str) -> Vec<&str> {
     found
 }
 
-impl Service for Focus {
+impl Service for Windows {
     fn new() -> Self {
-        Self { title: String::new() }
+        Self { list: Vec::new() }
     }
 
     /*
      * Umbriel sends its whole window list on every change to any window (a title, a move, each frame of an animation),
-     * far more often than the focused one's title changes. so a reader thread passes the lists on, and this thread
-     * sleeps until one comes, waits a tenth of a second for the rest of a burst, and works out the title once, from
-     * the last of them. nothing wakes while nothing happens
+     * far more often than a window opens, closes or takes focus. so a reader thread passes the lists on, and this
+     * thread sleeps until one comes, waits a tenth of a second for the rest of a burst, and reads the last of them.
+     * a title or a move changes nothing kept here, so the bar isn't drawn again for those
      */
     fn listen() {
         if !compositor::umbriel() {
@@ -129,10 +155,10 @@ impl Service for Focus {
                 latest = newer;
             }
 
-            let title = focused_title(&latest);
+            let list = in_order(&Self::read().list, windows(&latest));
 
-            if title != Self::read().title {
-                Self::write().title = title;
+            if list != Self::read().list {
+                Self::write().list = list;
             }
         }
     }
@@ -159,17 +185,34 @@ fn follow(noted: &std::sync::mpsc::Sender<String>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{focused_title, json_string};
+    use super::{Window, in_order, json_string, windows};
 
     #[test]
-    fn umbriels_focused_window_is_the_one_marked() {
-        let line = r#"{"data":[{"app_id":"a","border_effect":{"name":""},"focused":false,"title":"Other"},{"app_id":"b","focused":true,"title":"Mine \"quoted\" {x}","title_bar":false}],"event":"windows"}"#;
+    fn umbriels_windows_and_the_focused_one() {
+        let line = r#"{"data":[{"active":false,"app_id":"a","border_effect":{"name":""},"focused":true,"id":"1","scratchpad":"","title":"\"active\":true {x}"},{"active":true,"app_id":"b","focused":true,"id":"2","title":"Mine"},{"active":false,"app_id":"ghostty","focused":false,"id":"3","scratchpad":"quake"}],"event":"windows"}"#;
 
-        assert_eq!(focused_title(line), r#"Mine "quoted" {x}"#);
+        let found: Vec<_> =
+            windows(line).into_iter().map(|window| (window.id, window.app_id, window.focused)).collect();
 
-        // nothing focused, like an empty workspace
-        assert_eq!(focused_title(r#"{"data":[{"focused":false,"title":"x"}],"event":"windows"}"#), "");
-        assert_eq!(focused_title(r#"{"data":[],"event":"windows"}"#), "");
+        // the drop-down terminal is left out, a workspace's own focused window isn't the one with the keyboard, and
+        // a title that looks like the marker doesn't count
+        assert_eq!(found, [("1".into(), "a".into(), false), ("2".into(), "b".into(), true)]);
+
+        assert!(windows(r#"{"data":[],"event":"windows"}"#).is_empty());
+    }
+
+    #[test]
+    fn windows_keep_their_place_when_focus_moves() {
+        let window = |id: &str, focused| Window { id: id.into(), app_id: String::new(), focused };
+
+        let shown = [window("a", true), window("b", false)];
+
+        // b took focus and a new window c opened, both listed first
+        let ordered = in_order(&shown, vec![window("c", false), window("b", true), window("a", false)]);
+
+        let ids: Vec<_> = ordered.iter().map(|window| (window.id.as_str(), window.focused)).collect();
+
+        assert_eq!(ids, [("a", false), ("b", true), ("c", false)]);
     }
 
     #[test]

@@ -5,7 +5,6 @@ use amane::{
 };
 
 use crate::clock::Clock;
-use crate::focus::Focus;
 use crate::panels::{self, Which};
 use crate::weather::{Weather, describe};
 use crate::theme::{Theme, alpha, theme};
@@ -35,10 +34,10 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         left.push(Box::new(layout));
     }
 
-    left.push(Box::new(title(&t)));
+    left.push(Box::new(crate::shelf::view(&t, &name)));
 
     let left = Row::new(left)
-    .gap(10.0)
+    .gap(LEFT_GAP)
     .align(Center);
 
     // a Row places its children at the top, so the clock gets the same vertical centering as the sides
@@ -67,7 +66,7 @@ pub fn view(monitor: &Monitor) -> LayerWindow {
         Rectangle::new()
             .width(Parent)
             .height(Parent)
-            .padding(Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 8.0 })
+            .padding(Padding { top: 0.0, right: 0.0, bottom: 0.0, left: LEFT_PADDING })
             .align_child(Start, Center)
             .child(left),
         middle,
@@ -131,6 +130,23 @@ fn launcher(t: &Theme, name: &str) -> Rectangle {
     chip("launcher", t, SQUARE, logo).on_click(toggle_on(name, Which::Dashboard))
 }
 
+// the left zone's padding and the gap between its chips, which `shelf_left` adds up like `view` lays them out
+const LEFT_PADDING: f32 = 8.0;
+const LEFT_GAP: f32 = 10.0;
+
+fn workspaces_width(count: usize) -> f32 {
+    20.0 + count as f32 * 14.0 + 14.0
+}
+
+/// distance from the screen's left edge to the shelf, so an app's menu can line up under its button
+pub fn shelf_left(output: &str) -> f32 {
+    let workspaces = Workspaces::read().list().iter().filter(|workspace| workspace.output() == Some(output)).count();
+
+    let layout = if crate::layouts::Layouts::read().on(output).is_some() { SQUARE + LEFT_GAP } else { 0.0 };
+
+    LEFT_PADDING + SQUARE + LEFT_GAP + workspaces_width(workspaces) + LEFT_GAP + layout
+}
+
 fn workspaces(t: &Theme, monitor: &Monitor) -> Rectangle {
     let workspaces = Workspaces::read();
 
@@ -165,7 +181,7 @@ fn workspaces(t: &Theme, monitor: &Monitor) -> Rectangle {
         ));
     }
 
-    let width = 20.0 + dots.len() as f32 * 14.0 + 14.0;
+    let width = workspaces_width(dots.len());
 
     chip("workspaces", t, width, Row::new(dots).gap(6.0).align(Center))
 }
@@ -183,16 +199,6 @@ fn layout(t: &Theme, name: &str) -> Option<Rectangle> {
         chip("layout", t, SQUARE, icon(crate::layouts::glyph(&layout), 14.0, t.dim))
             .on_click(move |button| crate::layouts::cycle(&output, if matches!(button, amane::Button::Right) { -1 } else { 1 })),
     )
-}
-
-fn title(t: &Theme) -> Rectangle {
-    let focus = Focus::read();
-
-    Rectangle::new()
-        .width(320.0)
-        .height(HEIGHT - 1.0)
-        .align_child(Start, Center)
-        .child(label(&focus.title, 12.5, t.dim).elide())
 }
 
 // the clock pill: time and date, and the weather on its right once there is some

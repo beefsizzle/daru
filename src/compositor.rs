@@ -6,8 +6,8 @@ use std::process::{Command, Stdio};
 use amane::{Argument, Bus};
 
 /*
- * what the shell asks of the compositor: logging out, screenshots, and Umbriel's event stream, which the focused
- * window's title (focus.rs) and the layout chip (layouts.rs) follow. the shell is made for Umbriel. on another
+ * what the shell asks of the compositor: logging out, screenshots, and Umbriel's event stream, which the shelf's open
+ * windows (focus.rs) and the layout chip (layouts.rs) follow. the shell is made for Umbriel. on another
  * compositor it still runs, without the parts that need Umbriel
  */
 

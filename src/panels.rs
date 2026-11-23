@@ -15,6 +15,7 @@ pub enum Which {
     Calendar,
     Notifications,
     TrayMenu,
+    AppMenu, // an app's menu on the bar's shelf
     Wallpapers,
     Launcher,
     Power,

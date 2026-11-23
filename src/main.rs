@@ -25,6 +25,7 @@ mod netpanel;
 mod panels;
 mod recolor;
 mod schemes;
+mod shelf;
 mod screensaver;
 mod power;
 mod profiles;
@@ -199,6 +200,7 @@ fn main() {
         .window_per_monitor(calendar::view)
         .window_per_monitor(notify::center)
         .window_per_monitor(traymenu::view)
+        .window_per_monitor(shelf::menu)
         .window_per_monitor(wallpapers::view)
         .window_per_monitor(launcher::view)
         .window_per_monitor(power::view)

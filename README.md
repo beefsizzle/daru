@@ -38,6 +38,10 @@ screen for greetd, with its own `install.sh`.
 `amane ipc call screenshot region|screen|annotate` takes screenshots: pick a region over the frozen screen, then save,
 copy, or open it in satty to draw on.
 
+The bar's shelf shows pinned apps and every open one. A click jumps to the app's window on whatever workspace or
+monitor it's on, and a right click opens its menu: pin or unpin (kept in `~/.config/amane-shell/pinned`), close,
+or move it to another workspace.
+
 `umbriel/config.toml` is an example Umbriel config for daru: Umbriel's own starting config with daru starting at
 login, its panels on the keybinds, and blur behind its bar and panels. Copy it to `~/.config/umbriel/config.toml`.
 
