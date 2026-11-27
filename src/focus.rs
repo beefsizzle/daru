@@ -88,7 +88,7 @@ fn unicode(characters: &mut std::str::Chars) -> Option<u32> {
 fn windows(snapshot: &str) -> Vec<Window> {
     objects(snapshot)
         .into_iter()
-        .filter(|window| json_string(window, "scratchpad").is_none_or(|pad| pad.is_empty()))
+        .filter(|window| on_shelf(window))
         .filter_map(|window| {
             Some(Window {
                 id: json_string(window, "id")?,
@@ -99,11 +99,24 @@ fn windows(snapshot: &str) -> Vec<Window> {
         .collect()
 }
 
+fn on_shelf(window: &str) -> bool {
+    json_string(window, "scratchpad").is_none_or(|pad| pad.is_empty())
+}
+
+/*
+ * the titles of the windows on the shelf, sorted by id: Umbriel lists the focused window first, so in its own order
+ * every change of focus would look like new titles and draw an open app menu again
+ */
 fn titles(snapshot: &str) -> Vec<(String, String)> {
-    objects(snapshot)
+    let mut titles: Vec<(String, String)> = objects(snapshot)
         .into_iter()
+        .filter(|window| on_shelf(window))
         .filter_map(|window| Some((json_string(window, "id")?, json_string(window, "title").unwrap_or_default())))
-        .collect()
+        .collect();
+
+    titles.sort_unstable();
+
+    titles
 }
 
 /*
@@ -237,6 +250,11 @@ mod tests {
         assert!(windows(r#"{"data":[],"event":"windows"}"#).is_empty());
 
         assert_eq!(titles(line)[1], ("2".into(), "Mine".into()));
+
+        // the drop-down terminal has no title kept, and focus moving to the other window changes nothing
+        let refocused = r#"{"data":[{"active":true,"app_id":"b","id":"2","title":"Mine"},{"active":false,"app_id":"a","id":"1","title":"\"active\":true {x}"}],"event":"windows"}"#;
+
+        assert_eq!(titles(line), titles(refocused));
     }
 
     #[test]
