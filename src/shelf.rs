@@ -100,7 +100,9 @@ struct Found {
 
 /*
  * the app and icon for each app id, worked out once: the bar is drawn on every change it shows, on each monitor, and
- * matching goes through every installed app. forgotten when the installed apps change
+ * matching goes through every installed app. all of it is forgotten when apps are added or removed, and one app's
+ * when its launcher entry is no longer installed as it was: an update can rewrite the entry without changing how many
+ * there are, like the Craft apps, whose entries name a versioned AppImage, or an app started by its /nix/store path
  */
 fn found(apps: &[DesktopApp], app_id: &str) -> Found {
     thread_local! {
@@ -113,20 +115,28 @@ fn found(apps: &[DesktopApp], app_id: &str) -> Found {
             known.clear();
         }
 
-        known
-            .entry(app_id.to_lowercase())
-            .or_insert_with(|| {
-                let app = app_for(apps, app_id);
+        let key = app_id.to_lowercase();
 
-                let icon = app
-                    .as_ref()
-                    .and_then(|app| app.icon_path().map(|path| path.to_string_lossy().into_owned()))
-                    .or_else(|| crate::icons::resolve(app_id))
-                    .or_else(|| crate::icons::resolve(&app_id.to_lowercase()));
+        // comparing against the installed entries is cheap next to matching again: most differ in their name
+        if let Some(cached) = known.get(&key)
+            && cached.app.as_ref().is_none_or(|app| apps.contains(app))
+        {
+            return cached.clone();
+        }
 
-                Found { app, icon }
-            })
-            .clone()
+        let app = app_for(apps, app_id);
+
+        let icon = app
+            .as_ref()
+            .and_then(|app| app.icon_path().map(|path| path.to_string_lossy().into_owned()))
+            .or_else(|| crate::icons::resolve(app_id))
+            .or_else(|| crate::icons::resolve(&app_id.to_lowercase()));
+
+        let fresh = Found { app, icon };
+
+        known.insert(key, fresh.clone());
+
+        fresh
     })
 }
 
