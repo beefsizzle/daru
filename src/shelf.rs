@@ -259,7 +259,7 @@ pub fn view(t: &Theme, output: &str) -> Row {
 #[derive(Default)]
 struct Menu {
     key: String,            // the app it's for
-    place: usize,           // where its button is on the shelf, which the menu lines up under
+    place: usize,           // where its button was when it opened, for when the app leaves the shelf (see `menu`)
     chosen: Option<String>, // the one window closing and moving act on, or all of the app's when none
 }
 
@@ -461,7 +461,14 @@ pub fn menu(monitor: &Monitor) -> LayerWindow {
     };
 
     // the app as the shelf has it now, which may have lost its windows while the menu was open
-    let item = items().into_iter().find(|item| item.key.eq_ignore_ascii_case(&key));
+    let mut items = items();
+
+    let at = items.iter().position(|item| item.key.eq_ignore_ascii_case(&key));
+
+    // the menu follows its button when apps to its left open or close, and stays put if the app itself left the shelf
+    let place = at.unwrap_or(place);
+
+    let item = at.map(|at| items.swap_remove(at));
 
     let (name, windows) = match &item {
         Some(item) => (
